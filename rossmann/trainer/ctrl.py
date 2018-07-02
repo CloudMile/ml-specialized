@@ -167,12 +167,14 @@ class Ctrl(object):
         feat_data, target = train_fn()
         feat_spec = model.feature.create_feature_columns()
         dense_data = tf.feature_column.input_layer(feat_data, feat_spec[key])
+        dense_all = tf.feature_column.input_layer(feat_data, list(feat_spec.values()))
 
         with tf.Session() as sess:
             tf.global_variables_initializer().run()
             sess.run(tf.tables_initializer())
-            encoded, origin, feat_data, target_ = sess.run([dense_data, feat_data[key], feat_data, target])
-        return encoded, origin, feat_data, target_
+            encoded, origin, feat_data, target_, all_ = sess.run([
+                dense_data, feat_data[key], feat_data, target, dense_all])
+        return encoded, origin, feat_data, target_, all_
 
     # TODO any test !
     def test(self):

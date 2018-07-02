@@ -1,4 +1,4 @@
-import yaml, codecs, logging, os, re
+import yaml, codecs, logging, os, pandas as pd
 from logging import config
 from datetime import datetime
 
@@ -56,3 +56,7 @@ def deep_walk(path, prefix:str=None):
         sub_root = f'{prefix}{sub_root}'
         for name in files:
             yield '/'.join([root, name]), '/'.join([sub_root, name])
+
+def preview(fpath, heads=5):
+    for chunk in pd.read_csv(fpath, chunksize=heads):
+        return chunk

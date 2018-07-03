@@ -59,7 +59,6 @@ class Ctrl(object):
         from google.cloud import storage
 
         utils.find_latest_expdir(self.p)
-        # storage.Client.from_service_account_json(self.p.api_key_path)
         bucket = storage.Client().get_bucket(p.bucket_name)
         # clean model dir
         for blob in bucket.list_blobs(prefix=p.prefix):

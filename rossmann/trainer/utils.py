@@ -60,3 +60,4 @@ def deep_walk(path, prefix:str=None):
 def preview(fpath, heads=5):
     for chunk in pd.read_csv(fpath, chunksize=heads):
         return chunk
+

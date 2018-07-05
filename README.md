@@ -10,5 +10,5 @@ CloudMile project for google ml-specialist
 ### Custom tf.estimator.Estimator for KKBOX Music Recommendation Engine
 
 - From kaggle [WSDM - KKBox's Music Recommendation Challenge](https://www.kaggle.com/c/kkbox-music-recommendation-challenge/data)
-- See the [rossman.ipynb](kkbox/kkbox.ipynb) for details
+- See the [kkbox.ipynb](kkbox/kkbox.ipynb) for details
 

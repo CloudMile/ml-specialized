@@ -212,17 +212,18 @@ class CatgMapper(BaseMapper):
             na_conds = x.isna()
             na_indices = na_conds.nonzero()[0]
             na_len = sum(na_conds)
-            x.loc[na_conds] = [[None]] * na_len
+            x.loc[na_conds] = [(None,)] * na_len
             concat = pd.Series(np.concatenate(x.values))
             # concat = do_default(concat)
-            x = concat.map(self.enc_, na_action='ignore').fillna(0).astype(int).values
+            x = concat.map(self.enc_, na_action='ignore')\
+                      .map(lambda e: str(int(e)) if pd.notna(e) else '').values
+            return x
             x = pd.Series(np.split(x, lens)[:-1]) \
-                    .map(sorted, na_action='ignore') \
-                    .map(tuple, na_action='ignore')
+                  .map(lambda ary: tuple(sorted(ary)), na_action='ignore')
             # Put empty tuple to represent missing value in vector space,
             # pandas.Series.fillna not work at array type, e.g: series.fillna(tuple()) will fail
-            for idx in na_indices:
-                x.at[idx] = tuple()
+            # for idx in na_indices:
+            #     x.at[idx] = tuple()
             return x.values
         else:
             # y = do_default(y)

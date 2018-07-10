@@ -97,13 +97,13 @@ class CatgMapper(BaseMapper):
     logger = logger('CatgMapper')
 
     """fit categorical feature"""
-    def __init__(self, name=None, allow_null=True,
+    def __init__(self, name=None, outlier=None,
                  is_multi=False, sep=None, default=None,
                  vocabs:list=None, vocabs_path:str=None):
         self.name = name
-        self.allow_null = allow_null
         self.default = default
         self.is_multi = is_multi
+        self.outlier = outlier
         self.sep = sep
         self.vocabs = vocabs
         self.vocabs_path = vocabs_path
@@ -154,15 +154,14 @@ class CatgMapper(BaseMapper):
         except Exception as e:
             y = [y]
 
-        y = pd.Series(list(set(y)))
-        if not self.allow_null:
-            assert not y.hasnans, '[{}]: null value detected'.format(self.name)
-
-        y = y.dropna()
+        y = pd.Series(list(set(y))).dropna()
         if self.is_multi:
             stack = set()
-            self.separate(y).map(stack.update)
-            y = stack
+            self.split(y).map(stack.update)
+            y = pd.Series(list(stack))
+
+        # Remove outlier, prevent counting in classes
+        y = y[y != self.outlier]
 
         if len(y):
             clazz = set(self.classes_)
@@ -182,7 +181,7 @@ class CatgMapper(BaseMapper):
         self.enc_ = dict(zip(val, idx))
         self.inv_enc_ = dict(zip(idx, val))
 
-    def separate(self, y:pd.Series):
+    def split(self, y):
         if callable(self.sep):
             return y.map(self.sep, na_action='ignore')
         else:
@@ -195,40 +194,18 @@ class CatgMapper(BaseMapper):
         :return: Tuple with integer elements
         """
         y = pd.Series(y)
-        if not self.allow_null:
-            assert not y.hasnans, '[{}]: null value detected'.format(self.name)
-
-        # Handle outlier(regard None as outlier)
-        # if default value not in self.classes_: mapping to index which the default value mapping to
-        # else: mapping to 0
-        # def do_default(data):
-        #     if self.default is not None:
-        #         data.loc[~data.isin(self.enc_)] = self.default
-        #     return data
-
         if self.is_multi:
-            x = self.separate(y)
-            lens = np.cumsum(x.map(len, na_action='ignore').fillna(1).astype(int).values)
-            na_conds = x.isna()
-            na_indices = na_conds.nonzero()[0]
-            na_len = sum(na_conds)
-            x.loc[na_conds] = [(None,)] * na_len
-            concat = pd.Series(np.concatenate(x.values))
-            # concat = do_default(concat)
-            x = concat.map(self.enc_, na_action='ignore')\
-                      .map(lambda e: str(int(e)) if pd.notna(e) else '').values
-            return x
-            x = pd.Series(np.split(x, lens)[:-1]) \
-                  .map(lambda ary: tuple(sorted(ary)), na_action='ignore')
-            # Put empty tuple to represent missing value in vector space,
-            # pandas.Series.fillna not work at array type, e.g: series.fillna(tuple()) will fail
-            # for idx in na_indices:
-            #     x.at[idx] = tuple()
+            def map_fn(ary):
+                if isinstance(ary, list):
+                    return tuple(sorted(self.enc_[e] if e in self.enc_ else 0 for e in ary))
+                else:
+                    return (0,)
+
+            x = self.split(y).map(map_fn)
             return x.values
         else:
             # y = do_default(y)
             return y.map(self.enc_, na_action='ignore').fillna(0).astype(int).values
-
 
     def serialize(self, fp):
         info = {
@@ -236,7 +213,6 @@ class CatgMapper(BaseMapper):
             'classes_': self.classes_,
             'is_multi': self.is_multi,
             'sep': self.sep,
-            'allow_null': self.allow_null,
             'default': self.default,
             'freeze_': self.freeze_
         }
@@ -246,7 +222,6 @@ class CatgMapper(BaseMapper):
     def unserialize(self, fp):
         info = yaml.load(fp)
         self.is_multi = info['is_multi']
-        self.allow_null = info['allow_null']
         self.sep = info['sep']
         self.name = info['name']
         self.classes_ = info['classes_']
@@ -274,16 +249,15 @@ class CounterEncoder(CatgMapper):
         except Exception as e:
             y = [y]
 
-        y = pd.Series(list(y))
-        if not self.allow_null:
-            assert not y.hasnans, '[{}]: null value detected'.format(self.name)
-
-        y = y.dropna()
+        y = pd.Series(list(y)).dropna()
         if self.is_multi:
-            self.separate(y).map(self.counter.update)
+            self.split(y).map(self.counter.update)
             # y.str.split(f'\s*{re.escape(self.sep)}\s*').map(self.counter.update)
         else:
             self.counter.update(y.values)
+
+        # Remove outlier, prevent counting in classes
+        y = y[y != self.outlier]
 
         if len(y):
             # Filter the low freq categories

@@ -5,8 +5,6 @@ from datetime import datetime
 from collections import Counter
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 
-from . import flex
-
 class Logging(object):
     instance = None
 
@@ -15,7 +13,7 @@ class Logging(object):
         if Logging.instance is None:
             print(f'init logger instance ...')
 
-            log_conf_path = f'{os.path.dirname(__file__)}/logging.yaml'
+            log_conf_path = f'{os.path.dirname(os.path.dirname(__file__))}/logging.yaml'
             with codecs.open(log_conf_path, 'r', 'utf-8') as r:
                 logging.config.dictConfig(yaml.load(r))
             Logging.instance = logging
@@ -134,6 +132,7 @@ class CatgMapper(BaseMapper):
             self.freeze_ = True
 
         if self.vocabs_path is not None:
+            from . import flex
             blob = flex.io(self.vocabs_path)
             assert blob.exists(), "[{}]: can't find vocabs file [{}]"\
                                   .format(self.name, self.vocabs_path)

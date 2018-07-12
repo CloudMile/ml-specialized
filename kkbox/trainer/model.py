@@ -2,7 +2,8 @@ import tensorflow as tf, os, shutil
 from tensorflow.python.feature_column import feature_column
 from pprint import pprint
 
-from . import utils, app_conf, input, metadata
+from . import app_conf, input, metadata
+from .utils import utils
 
 class Model(object):
 

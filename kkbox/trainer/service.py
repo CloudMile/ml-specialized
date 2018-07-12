@@ -4,7 +4,8 @@ from googleapiclient import discovery
 from datetime import datetime
 from pprint import pprint
 
-from . import app_conf, input, model as m, utils
+from . import app_conf, input, model as m
+from .utils import utils
 random.seed(42)
 
 class Service(object):

@@ -3,7 +3,8 @@ import json, multiprocessing
 
 from collections import OrderedDict, defaultdict
 
-from . import metadata, model as m, app_conf, utils
+from . import metadata, model as m, app_conf
+from .utils import utils
 
 class Input(object):
     instance = None

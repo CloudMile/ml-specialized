@@ -2,7 +2,8 @@ import tensorflow as tf, numpy as np, os
 import pandas as pd
 
 from . import app_conf, service, input
-from . import model as m, utils
+from . import model as m
+from .utils import utils
 
 class Ctrl(object):
     instance = None

@@ -2,7 +2,6 @@ import pandas as pd, seaborn as sns
 
 from matplotlib import pyplot as plt
 
-
 def flat(data, multi_col):
     """Flat the splitted string multivariate feature with the target
         - catg1|catg2, 1

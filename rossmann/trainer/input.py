@@ -185,16 +185,6 @@ class Input(object):
             [type(e[0]) for e in metadata.HEADER_DEFAULTS]
         ))
 
-    def csv2dicts(self, csvfile):
-        data = []
-        keys = []
-        for row_index, row in enumerate(csvfile):
-            if row_index == 0:
-                keys = row
-                continue
-            data.append({key: value for key, value in zip(keys, row)})
-        return data
-
     def process_features(self, features):
         """ Use to implement custom feature engineering logic, e.g. polynomial expansion
         Default behaviour is to return the original feature tensors dictionary as is
@@ -412,82 +402,6 @@ class Input(object):
             return features, target
 
         return _input_fn
-
-    # def prepare_feature(self, data, store_data, is_train=True):
-    #     train_data_X = []
-    #     train_data_y = []
-    #
-    #     for record in data:
-    #         # if record['Sales'] != '0' and record['Open'] != '':
-    #         fl = self.feature_list(record, store_data)
-    #         train_data_X.append(fl)
-    #         if is_train:
-    #             train_data_y.append(float(record['Sales']))
-    #
-    #     if is_train:
-    #         self.logger.info(f"min sales: {min(train_data_y)}, max sales: {max(train_data_y)}")
-    #
-    #     # Sort by first column: date
-    #     ret = pd.DataFrame(data=train_data_X).sort_values(0)
-    #     ret = ret.drop(0, 1)
-    #     if is_train:
-    #         ret.loc[:, -1] = np.array(train_data_y)
-    #         ret.columns = metadata.HEADER
-    #     else:
-    #         ret.columns = metadata.SERVING_COLUMNS
-    #     return ret
-
-    # def feature_list(self, record, store_data):
-    #     dt = datetime.strptime(record['Date'], '%Y-%m-%d')
-    #     store_index = int(record['Store'])
-    #     try:
-    #         store_open = int(record['Open'])
-    #     except:
-    #         store_open = 1
-    #
-    #     return [
-    #         record['Date'],
-    #         store_open,
-    #         store_index,
-    #         int(record['DayOfWeek']),
-    #         int(record['Promo']),
-    #         record['StateHoliday'],
-    #         record['SchoolHoliday'],
-    #         dt.year,
-    #         dt.month,
-    #         dt.day,
-    #         store_data[store_index - 1]['State'],
-    #     ]
-
-    # def do_raw(self, fpath):
-    #     with open(fpath) as f:
-    #         data = csv.reader(f, delimiter=',')
-    #         # with open(p.train_pkl, 'wb') as f:
-    #         data = self.csv2dicts(data)
-    #         data = data[::-1]
-    #         return data
-    #
-    # def do_store(self):
-    #     with open(self.p.store_data) as st, open(self.p.store_state) as st_state:
-    #         data = csv.reader(st, delimiter=',')
-    #         state_data = csv.reader(st_state, delimiter=',')
-    #         # with open(p.store_pkl, 'wb') as f:
-    #         data = self.csv2dicts(data)
-    #         state_data = self.csv2dicts(state_data)
-    #         self.set_nan_as_string(data)
-    #
-    #         for index, val in enumerate(data):
-    #             state = state_data[index]
-    #             val['State'] = state['State']
-    #             data[index] = val
-    #         return data
-
-    # def set_nan_as_string(self, data, replace_str='0'):
-    #     for i, x in enumerate(data):
-    #         for key, value in x.items():
-    #             if value == '':
-    #                 x[key] = replace_str
-    #         data[i] = x
 
 Input.instance = Input()
 

@@ -64,6 +64,28 @@ def preview(fpath, heads=5):
     for chunk in pd.read_csv(fpath, chunksize=heads):
         return chunk
 
+# def leave_one_out(e):
+#     msno, labels, target = e
+#     # labels is missing value
+#     if labels is None or type(labels) == float and pd.isna(labels):
+#         # type(labels) in (tuple, list) and not len(labels)
+#         weights = stats['weights']
+#     else:
+#         stats_copy = stats.copy()
+#         # Handle in array mode
+#         if type(labels) == str: labels = [labels]
+#         for label in labels:
+#             if stats_copy['count'][label] == 1:
+#                 stats_copy.drop(label, inplace=True)
+#             else:
+#                 stats_copy.loc[label, 'count'] -= 1
+#                 # if target == 1:
+#                 #     stats_copy.loc[label, 'sum'] -= 1
+#                 # stats_copy.loc[label, 'mean'] = stats_copy['sum'][label] / stats_copy['count'][label]
+#         weights = stats_copy['weights']
+#     # label_ary.append(tuple(weights.index))
+#     # weight_ary.append(tuple(weights.values))
+
 
 from sklearn.base import BaseEstimator, TransformerMixin
 class BaseMapper(BaseEstimator, TransformerMixin):

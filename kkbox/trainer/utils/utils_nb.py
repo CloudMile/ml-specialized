@@ -12,11 +12,15 @@ def flat(data, multi_col):
         -   catg2, 0
         -   catg3, 0
     """
-    multi_list, target = [], []
+    msno_ary, multi_list, target = [], [], []
     lens = data[multi_col].map(lambda e: len(e) if type(e) in (list, tuple) else 1)
     data[multi_col].map(lambda e: multi_list.extend(e) if type(e) in (list, tuple) else multi_list.append(None))
-    pd.Series(list(zip(lens, data.target))).map(lambda tp: target.extend([tp[1]] * tp[0]))
-    return multi_list, target
+    def map_fn(tp):
+        msno_ary.extend([tp[1]] * tp[0])
+        target.extend([tp[2]] * tp[0])
+
+    pd.Series(list(zip( lens, data.msno, data.target ))).map(map_fn)
+    return msno_ary, multi_list, target
 
 
 def univ_boxplot(df, colname):
@@ -68,3 +72,46 @@ def heatmap(data, *cols, annot=True):
     axs[1].set_title('count')
     axs[2].set_title('sum')
     plt.show()
+
+
+# n_msno = data.msno.nunique()
+# cache = {'progress': 0}
+# def map_msno(pipe):
+#     def set_cols(col, weights):
+#         try:
+#             weights = weights.drop('')
+#         except:
+#             pass
+#         if len(weights) > 0:
+#             ret[f'msno_{col}_hist'] = tuple(weights.index)
+#             ret[f'msno_{col}_count'] = tuple(weights['count'].values.astype(float))
+#             ret[f'msno_{col}_mean'] = tuple(weights['mean'].values.astype(float))
+#         else:
+#             ret[f'msno_{col}_count'] = ('',)
+#             ret[f'msno_{col}_mean'] = (0.,)
+#             ret[f'msno_{col}_mean'] = (0.,)
+#
+#     cache['progress'] += 1
+#     if cache['progress'] % 100 == 0:
+#         print(f'\r {cache["progress"]}/{n_msno} processed.', end='')
+#
+#     ret = pd.Series()
+#     # pos_pipe = pipe.query('target == 1')
+#     len_ = len(pipe)
+#     for col in ('source_system_tab', 'source_screen_name', 'source_type', 'language'):
+#         weights = pipe.groupby(col).target.agg(['count', 'mean'])
+#         # label_ary, weight_ary = [], []
+#         # pd.Series(list(zip(pipe.msno, pipe[col], pipe.target))).map(leave_one_out)
+#         set_cols(col, weights)
+#
+#     for col in ('genre_ids', 'artist_name', 'composer', 'lyricist'):
+#         flated, target = utils_nb.flat(pipe, col)
+#         weights = pd.DataFrame({col: flated, 'target': target}) \
+#             .groupby(col).target.agg(['count', 'mean'])
+#         # label_ary, weight_ary = [], []
+#         # pd.Series(list(zip(pipe.msno, pipe[col], pipe.target))).map(leave_one_out)
+#         set_cols(col, weights)
+#
+#     ret['msno_song_query'] = tuple(pos_pipe.song_id.unique()) if len(pos_pipe) else ('',)
+#     ret['msno_song_query_weights'] = (1.,) * len(ret['msno_song_query'])
+#     return ret

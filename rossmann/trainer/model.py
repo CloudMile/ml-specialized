@@ -1,6 +1,8 @@
 import tensorflow as tf, os, shutil
 from tensorflow.python.feature_column import feature_column
-from pprint import pprint
+from tensorflow.python.ops import metrics_impl
+from tensorflow.python.eager import context
+from tensorflow.python.ops import math_ops
 
 from . import utils, app_conf, input, metadata
 
@@ -49,10 +51,26 @@ class Model(object):
             Returns:
                 dictionary of string:metric
             """
+            def rmspe(labels, predictions, weights=None):
+                if context.executing_eagerly():
+                    raise RuntimeError('rmspe is not supported '
+                                       'when eager execution is enabled.')
+
+                predictions, labels, weights = metrics_impl._remove_squeezable_dimensions(
+                    predictions=predictions, labels=labels, weights=weights)
+                # The target has been take log1p, so do expm1 to target back
+                labels, predictions = math_ops.expm1(labels), math_ops.expm1(predictions)
+                mspe, update_op = metrics_impl.mean(
+                    math_ops.square((labels - predictions) / labels), weights)
+                rmspe = math_ops.sqrt(mspe)
+                rmspe_update_op = math_ops.sqrt(update_op)
+                return rmspe, rmspe_update_op
+
             metrics = {}
             pred_values = predictions['predictions']
             metrics["mae"] = tf.metrics.mean_absolute_error(labels, pred_values)
             metrics["rmse"] = tf.metrics.root_mean_squared_error(labels, pred_values)
+            metrics["rmspe"] = rmspe(labels, pred_values)
             return metrics
 
         est = tf.contrib.estimator.add_metrics(est, metric_fn)

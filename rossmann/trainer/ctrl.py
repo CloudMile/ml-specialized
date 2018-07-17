@@ -177,8 +177,13 @@ class Ctrl(object):
 
     # TODO any test !
     def test(self):
-        serving_inp = self.input.csv_serving_fn()
-        return serving_inp
+        # serving_inp = self.input.csv_serving_fn()
+        # return serving_inp
+
+        with tf.Graph().as_default():
+            self.input.generate_input_fn(self.p.valid_files)()
+            with tf.Session() as sess:
+                pass
 
 Ctrl.instance = Ctrl()
 

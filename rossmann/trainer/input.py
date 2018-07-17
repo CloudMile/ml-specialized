@@ -313,6 +313,7 @@ class Input(object):
             defaults = metadata.HEADER_DEFAULTS
         # tf.expand_dims(csv_row, -1)
         columns = tf.decode_csv(tf.expand_dims(csv_row, -1), record_defaults=defaults)
+        print(f'columns: {columns}')
         features = OrderedDict(zip(column_names, columns))
 
         return features
@@ -372,6 +373,13 @@ class Input(object):
                 dataset = tf.data.TextLineDataset(filenames=file_names)
                 dataset = dataset.skip(skip_header_lines)
                 dataset = dataset.map(lambda csv_row: self.parse_csv(csv_row, is_serving=is_serving))
+                # Some sales columns of rows equals to zero, filter this out
+                if mode == tf.estimator.ModeKeys.EVAL:
+                    def filter_fn(feat):
+                        # Shape of feat[metadata.TARGET_NAME] is (1,),
+                        # it's required to reduce the shape of returned bool value, use tf.squeeze
+                        return tf.squeeze(feat[metadata.TARGET_NAME] > 0)
+                    dataset = dataset.filter(filter_fn)
             else:
                 # dataset = dt.TFRecordDataset(filenames=file_names)
                 # dataset = dataset.map(lambda tf_example: parse_tf_example(tf_example),
@@ -382,6 +390,7 @@ class Input(object):
                                 num_parallel_calls=num_threads)\
                              .map(lambda features, target: (self.process_features(features), target),
                                 num_parallel_calls=num_threads)
+
             if shuffle:
                 dataset = dataset.shuffle(buffer_size)
 

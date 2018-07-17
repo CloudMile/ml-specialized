@@ -87,6 +87,8 @@ def preview(fpath, heads=5):
 #     # weight_ary.append(tuple(weights.values))
 
 
+
+
 from sklearn.base import BaseEstimator, TransformerMixin
 class BaseMapper(BaseEstimator, TransformerMixin):
     def init_check(self):
@@ -175,6 +177,7 @@ class CatgMapper(BaseMapper):
         except Exception as e:
             y = [y]
 
+        # is_multi = is_multi if is_multi is not None else self.is_multi
         y = pd.Series(list(set(y))).dropna()
         if self.is_multi:
             stack = set()
@@ -208,16 +211,18 @@ class CatgMapper(BaseMapper):
         else:
             return y.str.split(f'\s*{re.escape(self.sep)}\s*')
 
-    def transform(self, y):
+    def transform(self, y): # , is_multi=None
         """transform data(must fit first)
 
         :param y: string or string list
         :return: Tuple with integer elements
         """
+        # is_multi = is_multi if is_multi is not None else self.is_multi
+
         y = pd.Series(y)
         if self.is_multi:
             def map_fn(ary):
-                if isinstance(ary, list):
+                if type(ary) in (list, tuple):
                     return tuple(sorted(self.enc_[e] if e in self.enc_ else 0 for e in ary))
                 else:
                     return (0,)
@@ -293,49 +298,12 @@ class CounterEncoder(CatgMapper):
             self.gen_mapper()
         return self
 
-
-class MultiCatgToString(CounterEncoder):
-    def __init__(self, **kw):
-        super().__init__(**kw)
-
-    def transform(self, y):
-        """Transform data(must fit first)
-
-        :param y: string or string list
-        :return: string splited by comma sign
-        """
-        y = pd.Series(y)
-        if not self.allow_null:
-            assert not y.hasnans, '[{}]: null value detected'.format(self.name)
-
-        assert self.is_multi
-
-        if self.is_multi:
-            # For performance issue, concat all sequence in a batch and do once mapping,
-            # I've encountered super worst performance in processing once per row
-            x = self.separate(y)
-            lens = np.cumsum(x.map(len, na_action='ignore').fillna(1).astype(int).values)
-            na_conds = x.isna()
-            # na_indices = na_conds.nonzero()[0]
-            na_len = sum(na_conds)
-            x.loc[na_conds] = [[None]] * na_len
-            concat = pd.Series(np.concatenate(x.values))
-            # concat = do_default(concat)
-            x = concat.map(self.enc_).map(lambda e: str(int(e)) if pd.notna(e) else '')
-            x = pd.Series(np.split(x.values, lens)[:-1]).map(','.join)
-            return x.values
-
-
 class NumericMapper(BaseMapper):
     """fit numerical feature"""
     def __init__(self, name=None, default=None, scaler=None):
         self.default = default
         self.name = name
         self.scaler = scaler
-        self.max_ = None
-        self.min_ = None
-        self.cumsum_ = 0
-        self.n_total_ = 0
 
     def init_check(self):
         if self.default is not None:
@@ -347,9 +315,21 @@ class NumericMapper(BaseMapper):
 
     @property
     def mean(self):
-        return self.cumsum_ / self.n_total_ if self.n_total_ > 0 else None
+        return self.mean_
 
-    def partial_fit(self, y):
+    @property
+    def median(self):
+        return self.desc_['50%']
+
+    @property
+    def max(self):
+        return self.desc_['max']
+
+    @property
+    def min(self):
+        return self.desc_['min']
+
+    def fit(self, y):
         try:
             if isinstance(y, str):
                 raise Exception()
@@ -358,103 +338,41 @@ class NumericMapper(BaseMapper):
         except ValueError as e:
             y = list([y])
 
-        assert not isinstance(y[0], str), 'NumericMapper requires numeric data, got string!'
-
-        y = pd.Series(y).dropna().values
-        if len(y):
-            self.cumsum_ += sum(y)
-            self.n_total_ += len(y)
-            self.scaler.partial_fit([[min(y)], [max(y)]])
-            self.max_ = self.scaler.data_max_[0]
-            self.min_ = self.scaler.data_min_[0]
+        y = pd.Series(y).dropna()
+        self.desc_ = y.describe()
+        self.mean_ = self.desc_['mean']
+        self.scaler.fit(y.values[:, np.newaxis])
         return self
 
     def transform(self, y):
-        y = pd.Series(y).fillna(self.default if self.default is not None else self.mean)[:, np.newaxis]
+        y = pd.Series(y).fillna(self.median)[:, np.newaxis]
         return self.scaler.transform(y).reshape([-1])
 
     def inverse_transform(self, y):
         y = np.array(y)[:, np.newaxis]
         return self.scaler.inverse_transform(y).reshape([-1])
 
-    def _serialize(self):
-        ret = {}
-        ret['name'] = self.name
-        for num_attr in ('max_', 'min_', 'cumsum_', 'n_total_', 'default'):
-            val = getattr(self, num_attr)
-            ret[num_attr] = float(val) if val is not None else None
-        return ret
+def transform(y, mapper:BaseMapper, is_multi=False, sep=None):
+    def split(inp):
+        if callable(sep):
+            return inp.map(sep, na_action='ignore')
+        else:
+            return inp.str.split(f'\s*{re.escape(sep)}\s*')
 
-    def _unserialize(self, info):
-        self.scaler = MinMaxScaler()
-        self.max_ = info['max_']
-        self.min_ = info['min_']
-        self.scaler.partial_fit([[self.max_], [self.min_]])
-        self.cumsum_ = info['cumsum_']
-        self.n_total_ = info['n_total_']
-        self.name = info['name']
-        self.default = info['default']
-        return self
+    y = pd.Series(y)
+    if is_multi:
+        def map_fn(ary):
+            if type(ary) in (list, tuple):
+                return tuple(sorted(mapper.enc_[e] if e in mapper.enc_ else 0 for e in ary))
+            else:
+                return (0,)
 
-    def serialize(self, fp):
-        yaml.dump(self._serialize(), fp)
-        return self
-
-    def unserialize(self, fp):
-        info = yaml.load(fp)
-        return self._unserialize(info)
-
-class DatetimeMapper(NumericMapper):
-    def __init__(self, name=None, dt_fmt=None, default=None):
-        super().__init__(name=name, default=default)
-        self.dt_fmt = dt_fmt
-        self.default_ = None
-        self.default = default
-
-    def init_check(self):
-        if self.default is not None:
-            default = self.default
-            assert isinstance(default, str), 'datetime default value must be string!'
-            self.default = default.strip()
-            try:
-                self.default_ = datetime.strptime(self.default, self.dt_fmt).timestamp()
-            except Exception as e:
-                raise ValueError('parse default datetime [{}] failed!\n\n{}'.format(self.default, e))
-        return self
-
-    def partial_fit(self, y):
-        try:
-            if isinstance(y, str):
-                raise Exception()
-
-            y = list(y)
-        except ValueError as e:
-            y = list([y])
-
-        assert isinstance(y[0], str), 'DatetimeMapper requires string data for parsing, got {}!'.format(type(y[0]))
-
-        y = pd.Series(y).dropna().map(lambda e: datetime.strptime(e, self.dt_fmt).timestamp()).values
-        if len(y):
-            self.cumsum_ += sum(y)
-            self.n_total_ += len(y)
-            self.scaler.partial_fit([[min(y)], [max(y)]])
-            self.max_ = self.scaler.data_max_[0]
-            self.min_ = self.scaler.data_min_[0]
-        return self
-
-    def transform(self, y):
-        y = pd.Series(y).map(lambda e: datetime.strptime(e, self.dt_fmt).timestamp() if e is not None else None)\
-                        .fillna(self.default_ if self.default_ is not None else self.mean)[:, np.newaxis]
-        return self.scaler.transform(y).reshape([-1])
-
-    def _serialize(self):
-        info = super()._serialize()
-        info['dt_fmt'] = self.dt_fmt
-        info['default_'] = self.default_
-        return info
-
-    def _unserialize(self, info):
-        super()._unserialize(info)
-        self.dt_fmt = info['dt_fmt']
-        self.default_ = info['default_']
-        return self
+        return split(y).map(map_fn).values
+    else:
+        y = y.map(mapper.enc_, na_action='ignore')
+        if isinstance(mapper, NumericMapper):
+            y = y.fillna(0).astype(float).values
+        else:
+            y = y.fillna(0).astype(int).values
+        return y
+    pass

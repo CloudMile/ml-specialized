@@ -1,9 +1,8 @@
-import yaml, codecs, logging, os, pandas as pd, numpy as np, re, seaborn as sns
+import yaml, codecs, logging, os, pandas as pd, numpy as np, re, pickle
 
 from logging import config
 from datetime import datetime
 from collections import Counter
-from sklearn.preprocessing import StandardScaler, MinMaxScaler
 
 class Logging(object):
     instance = None
@@ -64,6 +63,14 @@ def preview(fpath, heads=5):
     for chunk in pd.read_csv(fpath, chunksize=heads):
         return chunk
 
+def read_pickle(path):
+    with open(path, 'rb') as fp:
+        return pickle.load(fp)
+
+def write_pickle(path, obj):
+    with open(path, 'wb') as fp:
+        pickle.dump(obj, fp)
+
 # def leave_one_out(e):
 #     msno, labels, target = e
 #     # labels is missing value
@@ -86,8 +93,9 @@ def preview(fpath, heads=5):
 #     # label_ary.append(tuple(weights.index))
 #     # weight_ary.append(tuple(weights.values))
 
-
-
+def sep_fn(e):
+    """"""
+    return e
 
 from sklearn.base import BaseEstimator, TransformerMixin
 class BaseMapper(BaseEstimator, TransformerMixin):
@@ -177,15 +185,18 @@ class CatgMapper(BaseMapper):
         except Exception as e:
             y = [y]
 
-        # is_multi = is_multi if is_multi is not None else self.is_multi
-        y = pd.Series(list(set(y))).dropna()
+        # Remove outlier, prevent counting in classes
+        y = pd.Series(list(y)).dropna()
+        if self.outlier is not None:
+            y = y[y != self.outlier]
+
         if self.is_multi:
             stack = set()
             self.split(y).map(stack.update)
+            # Maybe outlier in the array of some row, e.g: ('', 'a', 'b', ...)
+            if self.outlier is not None and self.outlier in stack:
+                stack.remove(self.outlier)
             y = pd.Series(list(stack))
-
-        # Remove outlier, prevent counting in classes
-        y = y[y != self.outlier]
 
         if len(y):
             clazz = set(self.classes_)
@@ -221,14 +232,25 @@ class CatgMapper(BaseMapper):
 
         y = pd.Series(y)
         if self.is_multi:
-            def map_fn(ary):
-                if type(ary) in (list, tuple):
-                    return tuple(sorted(self.enc_[e] if e in self.enc_ else 0 for e in ary))
-                else:
-                    return (0,)
+            # def map_fn(ary):
+            #     if type(ary) in (list, tuple):
+            #         return tuple(sorted(self.enc_[e] if e in self.enc_ else 0 for e in ary))
+            #     else:
+            #         return (0,)
+            #
+            # x = self.split(y).map(map_fn)
 
-            x = self.split(y).map(map_fn)
-            return x.values
+            y = self.split(y)
+            lens = y.map(lambda ary: len(ary) if type(ary) in (list, tuple) else 1)
+            indices = np.cumsum(lens)
+
+            concat = []
+            y.map(lambda ary: concat.extend(ary) if type(ary) in (list, tuple) else
+            concat.append(None))
+
+            y = pd.Series(concat).map(self.enc_, na_action='ignore') \
+                  .fillna(0).astype(int).values
+            return pd.Series(np.split(y, indices)[:-1]).values
         else:
             # y = do_default(y)
             return y.map(self.enc_, na_action='ignore').fillna(0).astype(int).values
@@ -256,7 +278,7 @@ class CatgMapper(BaseMapper):
         self.gen_mapper()
         return self
 
-class CounterEncoder(CatgMapper):
+class CountMapper(CatgMapper):
     """依照出現頻率進行編碼, 頻率由高到低的index = 0, 1, 2, 3 ..., 以此類推
      keep index = 0 for outlier.
     """
@@ -275,15 +297,19 @@ class CounterEncoder(CatgMapper):
         except Exception as e:
             y = [y]
 
+        # Remove outlier, prevent counting in classes
         y = pd.Series(list(y)).dropna()
+        if self.outlier is not None:
+            y = y[y != self.outlier]
+
         if self.is_multi:
             self.split(y).map(self.counter.update)
+            # Maybe outlier in the array of some row, e.g: ('', 'a', 'b', ...)
+            if self.outlier is not None and self.outlier in self.counter:
+                self.counter.pop(self.outlier)
             # y.str.split(f'\s*{re.escape(self.sep)}\s*').map(self.counter.update)
         else:
             self.counter.update(y.values)
-
-        # Remove outlier, prevent counting in classes
-        y = y[y != self.outlier]
 
         if len(y):
             # Filter the low freq categories
@@ -314,19 +340,23 @@ class NumericMapper(BaseMapper):
         return self
 
     @property
-    def mean(self):
-        return self.mean_
+    def count_(self):
+        return self.desc_['count']
 
     @property
-    def median(self):
+    def mean_(self):
+        return self.desc_['mean']
+
+    @property
+    def median_(self):
         return self.desc_['50%']
 
     @property
-    def max(self):
+    def max_(self):
         return self.desc_['max']
 
     @property
-    def min(self):
+    def min_(self):
         return self.desc_['min']
 
     def fit(self, y):
@@ -340,12 +370,12 @@ class NumericMapper(BaseMapper):
 
         y = pd.Series(y).dropna()
         self.desc_ = y.describe()
-        self.mean_ = self.desc_['mean']
+        # self.mean_ = self.desc_['mean']
         self.scaler.fit(y.values[:, np.newaxis])
         return self
 
     def transform(self, y):
-        y = pd.Series(y).fillna(self.median)[:, np.newaxis]
+        y = pd.Series(y).fillna(self.median_)[:, np.newaxis]
         return self.scaler.transform(y).reshape([-1])
 
     def inverse_transform(self, y):
@@ -353,6 +383,7 @@ class NumericMapper(BaseMapper):
         return self.scaler.inverse_transform(y).reshape([-1])
 
 def transform(y, mapper:BaseMapper, is_multi=False, sep=None):
+    s = datetime.now()
     def split(inp):
         if callable(sep):
             return inp.map(sep, na_action='ignore')
@@ -360,19 +391,22 @@ def transform(y, mapper:BaseMapper, is_multi=False, sep=None):
             return inp.str.split(f'\s*{re.escape(sep)}\s*')
 
     y = pd.Series(y)
-    if is_multi:
-        def map_fn(ary):
-            if type(ary) in (list, tuple):
-                return tuple(sorted(mapper.enc_[e] if e in mapper.enc_ else 0 for e in ary))
-            else:
-                return (0,)
-
-        return split(y).map(map_fn).values
+    ret = None
+    if isinstance(mapper, NumericMapper):
+        ret = mapper.transform(y)
     else:
-        y = y.map(mapper.enc_, na_action='ignore')
-        if isinstance(mapper, NumericMapper):
-            y = y.fillna(0).astype(float).values
+        if is_multi:
+            y = split(y)
+            lens = y.map(lambda ary: len(ary) if type(ary) in (list, tuple) else 1)
+            indices = np.cumsum(lens)
+
+            concat = []
+            y.map(lambda ary: concat.extend(ary) if type(ary) in (list, tuple) else
+                              concat.append(None))
+            y = pd.Series(concat).map(mapper.enc_, na_action='ignore')\
+                                 .fillna(0).astype(int).values
+            ret = pd.Series(np.split(y, indices)[:-1]).map(tuple).values
         else:
-            y = y.fillna(0).astype(int).values
-        return y
-    pass
+            ret = y.map(mapper.enc_, na_action='ignore').fillna(0).astype(int).values
+    print(f'transform take time {datetime.now() - s}')
+    return ret

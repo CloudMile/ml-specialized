@@ -383,6 +383,7 @@ class NumericMapper(BaseMapper):
         return self.scaler.inverse_transform(y).reshape([-1])
 
 def transform(y, mapper:BaseMapper, is_multi=False, sep=None):
+    """"""
     s = datetime.now()
     def split(inp):
         if callable(sep):
@@ -395,6 +396,7 @@ def transform(y, mapper:BaseMapper, is_multi=False, sep=None):
     if isinstance(mapper, NumericMapper):
         ret = mapper.transform(y)
     else:
+        # Transform to string splitted by comma,
         if is_multi:
             y = split(y)
             lens = y.map(lambda ary: len(ary) if type(ary) in (list, tuple) else 1)

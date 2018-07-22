@@ -408,6 +408,10 @@ def transform(y, mapper:BaseMapper, is_multi=False, sep=None):
             y = pd.Series(concat).map(mapper.enc_, na_action='ignore')\
                                  .fillna(0).astype(int).values
             ret = pd.Series(np.split(y, indices)[:-1]).map(tuple).values
+
+            # y = pd.Series(concat).map(mapper.enc_, na_action='ignore')\
+            #                      .fillna(0).map(lambda e: str(int(e))).values
+            # ret = pd.Series(np.split(y, indices)[:-1]).map(','.join).values
         else:
             ret = y.map(mapper.enc_, na_action='ignore').fillna(0).astype(int).values
     print(f'transform take time {datetime.now() - s}')

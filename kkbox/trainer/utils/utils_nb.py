@@ -115,3 +115,31 @@ def heatmap(data, *cols, annot=True):
 #     ret['msno_song_query'] = tuple(pos_pipe.song_id.unique()) if len(pos_pipe) else ('',)
 #     ret['msno_song_query_weights'] = (1.,) * len(ret['msno_song_query'])
 #     return ret
+
+
+# def gen(inputs):
+#     n_batch = 500
+#     defaults = dict(zip(metadata.HEADER, metadata.HEADER_DEFAULTS))
+#
+#     # Multivariate columns can't use function fillna ...
+#     def multi_fillna(df, colname):
+#         na_value = tuple(defaults[colname])
+#         na_conds = df[colname].isna().values
+#         df.loc[na_conds, colname] = df[na_conds][colname].map(lambda na: na_value)
+#
+#     counter = 0
+#     for _, data in inputs.groupby(np.arange(len(inputs)) // n_batch):
+#         merge = data.merge(members, how='left', on='msno') \
+#             .merge(songs, how='left', on='song_id')[metadata.HEADER]
+#         # Join could make NaN columns, fill the default value
+#         for colname in metadata.USER_FEATURES + metadata.SONG_FEATURES:
+#             if colname.endswith('_hist') or colname.endswith('_count') or colname.endswith('_mean') or \
+#                     colname in ('genre_ids', 'artist_name', 'composer', 'lyricist'):
+#                 multi_fillna(merge, colname)
+#             else:
+#                 merge[colname] = merge[colname].fillna(defaults[colname][0])
+#         counter += len(data)
+#         print(f'{counter} processed ...')
+#         # DataFrame.itertuple faster than DataFrame.iterrows
+#         for row in merge.itertuples(index=False):
+#             yield row

@@ -34,10 +34,10 @@ class Config(object):
 
     # Hyper parameter
     keep_checkpoint_max = 3
-    log_step_count_steps = 500
-    train_steps = 2308 * 3
-    valid_steps = 989
-    batch_size = 256
+    log_step_count_steps = 100
+    train_steps = 7748 * 3
+    valid_steps = 1953
+    batch_size = 500
     num_epochs = 10
     eval_every_secs = 600
     # encode_one_hot = False

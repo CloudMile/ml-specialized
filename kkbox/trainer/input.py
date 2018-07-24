@@ -329,8 +329,7 @@ class Input(object):
         return features
 
     def generate_input_fn(self,
-                          file_names_pattern,
-                          file_encoding='csv',
+                          inputs,
                           mode=tf.estimator.ModeKeys.EVAL,
                           skip_header_lines=1,
                           num_epochs=1,
@@ -357,6 +356,45 @@ class Input(object):
             A function () -> (features, indices) where features is a dictionary of
               Tensors, and indices is a single Tensor of label indices.
         """
+        def get_dtypes(e):
+            colname, typ = e
+            # Some integer columns in pandas with NaN value will be transform to float
+            if typ.name.startswith('int') or colname.endswith('_hist') or \
+                    colname in ('genre_ids', 'artist_name', 'composer', 'lyricist', 'city',
+                                'gender', 'registered_via', 'msno_age_catg', 'language', 'song_artist_name_len',
+                                'song_composer_len', 'song_lyricist_len', 'song_genre_ids_len', 'song_cc', 'song_xxx'):
+                return tf.int32
+            if typ.name.startswith('float') or colname.endswith('_count') or colname.endswith(
+                '_mean'): return tf.float32
+
+        def get_shape(e):
+            colname, typ = e
+            if colname.endswith('_hist') or colname.endswith('_count') or colname.endswith('_mean') or \
+                    colname in ('genre_ids', 'artist_name', 'composer', 'lyricist'):
+                return [None]
+            else:
+                return []
+
+        dtypes = pd.Series(list(zip(inputs.dtypes.index, inputs.dtypes.values)))
+        output_key = tuple(inputs.dtypes.index)
+        output_type = tuple(dtypes.map(get_dtypes))
+        output_shape = tuple(dtypes.map(get_shape))
+
+        def generate_fn(inputs):
+            def ret_fn():
+                for row in inputs.itertuples(index=False):
+                    yield row
+
+            return ret_fn
+
+        is_serving = True if mode == tf.estimator.ModeKeys.PREDICT else False
+        def zip_map(*row):
+            ret = OrderedDict(zip(output_key, row))
+            if is_serving:
+                return ret
+            else:
+                target = ret.pop(metadata.TARGET_NAME)
+                return ret, target
 
         def _input_fn():
             # shuffle = True if mode == tf.estimator.ModeKeys.TRAIN else False
@@ -367,8 +405,6 @@ class Input(object):
             self.logger.info("* data input_fn:")
             self.logger.info("================")
             self.logger.info("Mode: {}".format(mode))
-            self.logger.info("Input file(s): {}".format(file_names_pattern))
-            self.logger.info("Files encoding: {}".format(file_encoding))
             self.logger.info("Batch size: {}".format(batch_size))
             self.logger.info("Epoch count: {}".format(num_epochs))
             self.logger.info("Thread count: {}".format(num_threads))
@@ -376,119 +412,26 @@ class Input(object):
             self.logger.info("================")
             self.logger.info("")
 
-            file_names = tf.matching_files(file_names_pattern)
-
-            is_serving = True if mode == tf.estimator.ModeKeys.PREDICT else False
-            if file_encoding == 'csv':
-                dataset = tf.data.TextLineDataset(filenames=file_names)
-                dataset = dataset.skip(skip_header_lines)
-                dataset = dataset.map(lambda csv_row: self.parse_csv(csv_row, is_serving=is_serving))
-            else:
-                # dataset = dt.TFRecordDataset(filenames=file_names)
-                # dataset = dataset.map(lambda tf_example: parse_tf_example(tf_example),
-                #                       num_parallel_calls=num_threads)
-                pass
-
-            dataset = dataset.map(lambda features: self.get_features_target_tuple(features),
-                                num_parallel_calls=num_threads)\
-                             .map(lambda features, target: (self.process_features(features), target),
-                                num_parallel_calls=num_threads)
+            dataset = tf.data.Dataset.from_generator(generate_fn(inputs), output_type, output_shape)
+            dataset = dataset.skip(skip_header_lines)
+            dataset = dataset.map(zip_map, num_parallel_calls=num_threads)
             if shuffle:
                 dataset = dataset.shuffle(buffer_size)
 
-            dataset = dataset.batch(batch_size)\
-                             .prefetch(buffer_size)\
+            padded_shapes = OrderedDict(zip(output_key, output_shape))
+            if not is_serving:
+                padded_shapes = padded_shapes, padded_shapes.pop(metadata.TARGET_NAME)
+            dataset = dataset.padded_batch(500, padded_shapes) \
+                             .prefetch(buffer_size=tf.contrib.data.AUTOTUNE) \
                              .repeat(num_epochs)
-
-            # return dataset, use make_one_shot_iterator will raise error
-            # `Cannot capture a stateful node by value ...`
-            iterator = dataset.make_one_shot_iterator()
-            # iterator = dataset.make_initializable_iterator()
-
-            # if hooks is not None:
-            #     for hook in hooks:
-            #         hook.iterator_initializer_func = lambda sess: sess.run(iterator.initializer)
-
-            features, target = iterator.get_next()
-            return features, target
+            if is_serving:
+                features = dataset.make_one_shot_iterator().get_next()
+                return features
+            else:
+                features, target = dataset.make_one_shot_iterator().get_next()
+                return features, target
 
         return _input_fn
-
-    # def prepare_feature(self, data, store_data, is_train=True):
-    #     train_data_X = []
-    #     train_data_y = []
-    #
-    #     for record in data:
-    #         # if record['Sales'] != '0' and record['Open'] != '':
-    #         fl = self.feature_list(record, store_data)
-    #         train_data_X.append(fl)
-    #         if is_train:
-    #             train_data_y.append(float(record['Sales']))
-    #
-    #     if is_train:
-    #         self.logger.info(f"min sales: {min(train_data_y)}, max sales: {max(train_data_y)}")
-    #
-    #     # Sort by first column: date
-    #     ret = pd.DataFrame(data=train_data_X).sort_values(0)
-    #     ret = ret.drop(0, 1)
-    #     if is_train:
-    #         ret.loc[:, -1] = np.array(train_data_y)
-    #         ret.columns = metadata.HEADER
-    #     else:
-    #         ret.columns = metadata.SERVING_COLUMNS
-    #     return ret
-
-    # def feature_list(self, record, store_data):
-    #     dt = datetime.strptime(record['Date'], '%Y-%m-%d')
-    #     store_index = int(record['Store'])
-    #     try:
-    #         store_open = int(record['Open'])
-    #     except:
-    #         store_open = 1
-    #
-    #     return [
-    #         record['Date'],
-    #         store_open,
-    #         store_index,
-    #         int(record['DayOfWeek']),
-    #         int(record['Promo']),
-    #         record['StateHoliday'],
-    #         record['SchoolHoliday'],
-    #         dt.year,
-    #         dt.month,
-    #         dt.day,
-    #         store_data[store_index - 1]['State'],
-    #     ]
-
-    # def do_raw(self, fpath):
-    #     with open(fpath) as f:
-    #         data = csv.reader(f, delimiter=',')
-    #         # with open(p.train_pkl, 'wb') as f:
-    #         data = self.csv2dicts(data)
-    #         data = data[::-1]
-    #         return data
-    #
-    # def do_store(self):
-    #     with open(self.p.store_data) as st, open(self.p.store_state) as st_state:
-    #         data = csv.reader(st, delimiter=',')
-    #         state_data = csv.reader(st_state, delimiter=',')
-    #         # with open(p.store_pkl, 'wb') as f:
-    #         data = self.csv2dicts(data)
-    #         state_data = self.csv2dicts(state_data)
-    #         self.set_nan_as_string(data)
-    #
-    #         for index, val in enumerate(data):
-    #             state = state_data[index]
-    #             val['State'] = state['State']
-    #             data[index] = val
-    #         return data
-
-    # def set_nan_as_string(self, data, replace_str='0'):
-    #     for i, x in enumerate(data):
-    #         for key, value in x.items():
-    #             if value == '':
-    #                 x[key] = replace_str
-    #         data[i] = x
 
 Input.instance = Input()
 

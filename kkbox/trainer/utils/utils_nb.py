@@ -1,4 +1,5 @@
-import pandas as pd, seaborn as sns
+import pandas as pd, seaborn as sns, csv
+
 
 from matplotlib import pyplot as plt
 
@@ -73,6 +74,13 @@ def heatmap(data, *cols, annot=True):
     axs[2].set_title('sum')
     plt.show()
 
+# # Because of performance of pandas.to_csv too slow, use this will be greate
+# def to_csv(path, df, header=True):
+#     with open(path, 'w', newline='') as fp:
+#         w = csv.writer(fp)
+#         if header:
+#             w.writerows(df.columns[None, :])
+#         w.writerows(df.values)
 
 # n_msno = data.msno.nunique()
 # cache = {'progress': 0}

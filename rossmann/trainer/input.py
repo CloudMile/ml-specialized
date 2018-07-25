@@ -17,6 +17,26 @@ class Input(object):
             'csv': getattr(self, 'csv_serving_fn')
         }
 
+    def clean(self):
+        store = pd.read_csv(self.p.store_data)
+        dtypes = pd.Series(dict(zip(metadata.RAW_HEADER, metadata.RAW_DTYPES)))
+        for col in store.columns:
+            if col in dtypes:
+                typ = dtypes[col]
+                store[col] = store[col].map(typ, na_action='ignore')
+        store['CompetitionDistance'] = store.CompetitionDistance.fillna(store.CompetitionDistance.median())
+        # CompetitionOpenSinceMonth, CompetitionOpenSinceYear need to be transform date diff with 1970/01/01
+        year_month = pd.Series(list(zip(store.CompetitionOpenSinceYear, store.CompetitionOpenSinceMonth)))
+
+        def map_fn(e):
+            y, m = e
+            if pd.isna(y) or pd.isna(m): return np.nan
+            y, m = int(float(y)), int(float(m))
+            return f'{y}-{m}-1'
+
+        store['CompetitionOpenSince'] = (pd.to_datetime(year_month.map(map_fn)) - pd.datetime(2000, 1, 1)).dt.days
+
+
     def prepare(self, fobj, dump=False, is_train=True):
         """
 
@@ -30,11 +50,11 @@ class Input(object):
         data['StateHoliday'] = data.StateHoliday.map(str)
         dt = pd.to_datetime(data.Date)
         # Side inputs
-        st_drop_cols = [
-            'CompetitionDistance', 'CompetitionOpenSinceMonth', 'CompetitionOpenSinceYear',
-            'Promo2SinceWeek', 'Promo2SinceYear'] # 'Promo2', 'PromoInterval']
+        # st_drop_cols = [
+        #     'CompetitionDistance', 'CompetitionOpenSinceMonth', 'CompetitionOpenSinceYear',
+        #     'Promo2SinceWeek', 'Promo2SinceYear']
 
-        store = pd.read_csv(self.p.store_data).drop(st_drop_cols, 1)
+        store = pd.read_csv(self.p.store_data) # .drop(st_drop_cols, 1)
         store_states = pd.read_csv(self.p.store_state)
 
         merge = data.merge(store, how='left', on='Store').merge(store_states, how='left', on='Store')

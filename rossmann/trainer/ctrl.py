@@ -24,13 +24,15 @@ class Ctrl(object):
 
     def prepare(self, p):
         """
-        1. Prepare data: add, merge, drop columns ...
-        2. fit (if in training stage)
-        3. transform
-        4. Split input data to train, valid
+        1. Clean data: fill NaN value, drop unnecessary columns
+        2. Prepare data: add, merge, drop columns ...
+        3. Fit (if in training stage)
+        4. Transform
+        5. Split input data to train, valid
         :param p:
         :return:
         """
+        self.input.clean()
         data = self.input.prepare(p.train_data, dump=True, is_train=True)
         data = self.input.fit(data).transform(data, is_train=True)
         self.input.split(data)

@@ -210,26 +210,17 @@ class Input(object):
     def json_serving_input_fn(self):
         self.logger.info(f'use json_serving_input_fn !')
 
-        feat_obj = m.Feature.instance
-        feat_cols = feat_obj.create_feature_columns()
-        dtype = self.get_processed_dtype()
-        del dtype[metadata.TARGET_NAME]
+        columns = metadata.SERVING_COLUMNS
+        shapes = self.get_shape(is_serving=True)
+        dtypes = metadata.SERVING_DTYPES
 
-        mappiing = {str: tf.string, int: tf.int32, float: tf.float32}
-
-        inputs = {}
-        for name, column in feat_cols.items():
-            # print(f'name: {name}, column: {column}')
-            # inputs[name] = tf.placeholder(shape=[None], dtype=column.dtype, name=name)
-            inputs[name] = tf.placeholder(shape=[None], dtype=mappiing[dtype[name]], name=name)
-
-        features = {
-            key: tf.expand_dims(tensor, -1)
-            for key, tensor in inputs.items()
-        }
+        inputs = OrderedDict()
+        for name, shape, typ in zip(columns, shapes, dtypes):
+            # Remember add batch dimension to first position of shape
+            inputs[name] = tf.placeholder(shape=[None, None] if len(shape) > 0 else [None], dtype=typ, name=name)
 
         return tf.estimator.export.ServingInputReceiver(
-            features=self.process_features(features),
+            features=inputs,
             receiver_tensors=inputs
         )
 
@@ -302,31 +293,16 @@ class Input(object):
 
         return features, target
 
-    def parse_csv(self, csv_row, is_serving=False):
-        """Takes the string input tensor (csv) and returns a dict of rank-2 tensors.
-
-        Takes a rank-1 tensor and converts it into rank-2 tensor, with respect to its data type
-        (inferred from the metadata)
-
-        Args:
-            csv_row: rank-2 tensor of type string (csv)
-            is_serving: boolean to indicate whether this function is called during serving or training
-            since the serving csv_row input is different than the training input (i.e., no target column)
-        Returns:
-            rank-2 tensor of the correct data type
-        """
-        self.logger.info(f'is_serving: {is_serving}')
-        if is_serving:
-            column_names = metadata.SERVING_COLUMNS
-            defaults = metadata.SERVING_DEFAULTS
-        else:
-            column_names = metadata.HEADER
-            defaults = metadata.HEADER_DEFAULTS
-        # tf.expand_dims(csv_row, -1)
-        columns = tf.decode_csv(tf.expand_dims(csv_row, -1), record_defaults=defaults)
-        features = OrderedDict(zip(column_names, columns))
-
-        return features
+    def get_shape(self, is_serving=False):
+        cols = metadata.SERVING_COLUMNS if is_serving else metadata.HEADER
+        shapes = []
+        for colname in cols:
+            if colname.endswith('_hist') or colname.endswith('_count') or colname.endswith('_mean') or \
+                    colname in ('genre_ids', 'artist_name', 'composer', 'lyricist'):
+                shapes.append([None])
+            else:
+                shapes.append([])
+        return tuple(shapes)
 
     def generate_input_fn(self,
                           inputs,
@@ -356,29 +332,16 @@ class Input(object):
             A function () -> (features, indices) where features is a dictionary of
               Tensors, and indices is a single Tensor of label indices.
         """
-        def get_dtypes(e):
-            colname, typ = e
-            # Some integer columns in pandas with NaN value will be transform to float
-            if typ.name.startswith('int') or colname.endswith('_hist') or \
-                    colname in ('genre_ids', 'artist_name', 'composer', 'lyricist', 'city',
-                                'gender', 'registered_via', 'msno_age_catg', 'language', 'song_artist_name_len',
-                                'song_composer_len', 'song_lyricist_len', 'song_genre_ids_len', 'song_cc', 'song_xxx'):
-                return tf.int32
-            if typ.name.startswith('float') or colname.endswith('_count') or colname.endswith(
-                '_mean'): return tf.float32
-
-        def get_shape(e):
-            colname, typ = e
-            if colname.endswith('_hist') or colname.endswith('_count') or colname.endswith('_mean') or \
-                    colname in ('genre_ids', 'artist_name', 'composer', 'lyricist'):
-                return [None]
-            else:
-                return []
-
-        dtypes = pd.Series(list(zip(inputs.dtypes.index, inputs.dtypes.values)))
-        output_key = tuple(inputs.dtypes.index)
-        output_type = tuple(dtypes.map(get_dtypes))
-        output_shape = tuple(dtypes.map(get_shape))
+        is_serving = True if mode == tf.estimator.ModeKeys.PREDICT else False
+        # Train, Eval
+        if not is_serving:
+            output_key = tuple(metadata.HEADER)
+            output_type = tuple(metadata.HEADER_DTYPES)
+        # Prediction
+        else:
+            output_key = tuple(metadata.SERVING_COLUMNS)
+            output_type = tuple(metadata.SERVING_DTYPES)
+        output_shape = self.get_shape(is_serving)
 
         def generate_fn(inputs):
             def ret_fn():
@@ -387,7 +350,6 @@ class Input(object):
 
             return ret_fn
 
-        is_serving = True if mode == tf.estimator.ModeKeys.PREDICT else False
         def zip_map(*row):
             ret = OrderedDict(zip(output_key, row))
             if is_serving:
@@ -395,6 +357,8 @@ class Input(object):
             else:
                 target = ret.pop(metadata.TARGET_NAME)
                 return ret, target
+
+        hook = IteratorInitializerHook()
 
         def _input_fn():
             # shuffle = True if mode == tf.estimator.ModeKeys.TRAIN else False
@@ -421,51 +385,24 @@ class Input(object):
             padded_shapes = OrderedDict(zip(output_key, output_shape))
             if not is_serving:
                 padded_shapes = padded_shapes, padded_shapes.pop(metadata.TARGET_NAME)
-            dataset = dataset.padded_batch(500, padded_shapes) \
+
+            dataset = dataset.padded_batch(batch_size, padded_shapes) \
                              .prefetch(buffer_size=tf.contrib.data.AUTOTUNE) \
                              .repeat(num_epochs)
+
+            iterator = dataset.make_initializable_iterator()
+            hook.iterator_initializer_func = lambda sess: sess.run(iterator.initializer)
             if is_serving:
-                features = dataset.make_one_shot_iterator().get_next()
-                return features
+                # dataset.make_one_shot_iterator()
+                features = iterator.get_next()
+                return features, None
             else:
-                features, target = dataset.make_one_shot_iterator().get_next()
+                features, target = iterator.get_next()
                 return features, target
 
-        return _input_fn
+        return _input_fn, hook
 
 Input.instance = Input()
-
-def load_feature_stats():
-    """
-    Load numeric column pre-computed statistics (mean, stdv, min, max, etc.)
-    in order to be used for scaling/stretching numeric columns.
-
-    In practice, the statistics of large datasets are computed prior to model training,
-    using dataflow (beam), dataproc (spark), BigQuery, etc.
-
-    The stats are then saved to gcs location. The location is passed to package
-    in the --feature-stats-file argument. However, it can be a local path as well.
-
-    Returns:
-        json object with the following schema: stats['feature_name']['state_name']
-    """
-
-    feature_stats = None
-    p = app_conf.instance
-    try:
-        if p.feature_stats_file is not None and tf.gfile.Exists(p.feature_stats_file):
-            with tf.gfile.Open(p.feature_stats_file) as file:
-                content = file.read()
-            feature_stats = json.loads(content)
-            print("INFO:Feature stats were successfully loaded from local file...")
-        else:
-            print("WARN:Feature stats file not found. numerical columns will not be normalised...")
-    except:
-        print("WARN:Couldn't load feature stats. numerical columns will not be normalised...")
-
-    return feature_stats
-
-
 
 class IteratorInitializerHook(tf.train.SessionRunHook):
     """Hook to initialise data iterator after Session is created."""

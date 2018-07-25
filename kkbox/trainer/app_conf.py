@@ -33,15 +33,14 @@ class Config(object):
     export_name = 'estimator'
 
     # Hyper parameter
-    keep_checkpoint_max = 3
+    keep_checkpoint_max = 5
     log_step_count_steps = 100
-    train_steps = 7748 * 3
-    valid_steps = 1953
-    batch_size = 500
-    num_epochs = 10
-    eval_every_secs = 600
-    # encode_one_hot = False
-    # as_wide_columns = False
+    train_steps = 3874 * 5
+    valid_steps = 977
+    batch_size = 1000
+    num_epochs = 1
+    save_checkpoints_steps = 500
+    eval_every_secs = 4800
 
     # Serving relevant
     serving_format = 'json' # [json]

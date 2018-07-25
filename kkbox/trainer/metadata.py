@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 # Copyright 2017 Google Inc. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,6 +15,8 @@
 # ************************************************************************
 # YOU NEED TO MODIFY THE META DATA TO ADAPT THE TRAINER TEMPLATE YOUR DATA
 # ************************************************************************
+
+import tensorflow as tf
 
 # task type can be either 'classification' or 'regression', based on the target feature in the dataset
 TASK_TYPE = 'custom'
@@ -78,6 +78,38 @@ CONTEXT_FEATURES = ['source_system_tab', 'source_screen_name', 'source_type']
 TARGET_NAME = ['target']
 HEADER = MEMBER_FEATURES + SONG_FEATURES + CONTEXT_FEATURES + TARGET_NAME
 
+HEADER_DTYPES = [
+    # Members
+    tf.int32, tf.int32, tf.int32,
+    tf.float32, tf.float32, tf.int32, tf.float32, tf.float32,
+    tf.int32, tf.float32,
+    tf.int32, tf.float32,
+    tf.int32, tf.float32, tf.float32,
+    tf.int32, tf.float32, tf.float32,
+    tf.int32, tf.float32, tf.float32,
+    tf.int32, tf.float32, tf.float32,
+    tf.int32, tf.float32, tf.float32,
+    tf.int32, tf.float32,
+    tf.int32, tf.float32,
+    tf.int32, tf.float32,
+    # Songs
+    tf.int32,
+    tf.int32, tf.int32, tf.int32, tf.int32, tf.int32,
+    tf.int32, tf.int32, tf.float32, tf.float32, tf.float32, tf.float32,
+    tf.int32, tf.int32, tf.int32, tf.int32,
+    tf.int32, tf.float32, tf.float32,
+    tf.int32, tf.float32, tf.float32,
+    tf.int32, tf.float32, tf.float32,
+    tf.int32, tf.float32,
+    tf.int32, tf.float32,
+    tf.int32, tf.float32,
+    tf.int32, tf.float32,
+    # Context
+    tf.int32, tf.int32, tf.int32,
+    # Target
+    tf.int32
+]
+
 # list of the default values of all the columns of the input data, to help decoding the data types of the columns
 HEADER_DEFAULTS = [
     # Members
@@ -128,6 +160,9 @@ SERVING_COLUMNS.remove(TARGET_NAME)
 # list of the default values of all the columns of the serving data, to help decoding the data types of the columns
 SERVING_DEFAULTS = HEADER_DEFAULTS.copy()
 SERVING_DEFAULTS.pop(-1)
+
+SERVING_DTYPES = HEADER_DTYPES.copy()
+SERVING_DTYPES.pop(-1)
 
 
 # # list of the feature names of type int or float

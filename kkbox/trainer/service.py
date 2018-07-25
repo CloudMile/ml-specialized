@@ -15,16 +15,17 @@ class Service(object):
         self.p = app_conf.instance
         self.inp = input.Input.instance
 
-    def train(self, train_fn=None, valid_fn=None):
-        if tf.gfile.Exists(self.p.model_dir):
-            self.logger.info(f"Deleted job_dir {self.p.model_dir} to avoid re-use")
+    def train(self, train_fn=None, tr_hook=None, valid_fn=None, vl_hook=None, reset=True):
+        if reset and tf.gfile.Exists(self.p.model_dir):
+            self.logger.info(f"Delete job_dir {self.p.model_dir} to avoid re-use")
             shutil.rmtree(self.p.model_dir, ignore_errors=True)
             # tf.gfile.DeleteRecursively(self.p.model_dir)
+        os.makedirs(self.p.model_dir, exist_ok=True)
 
         run_config = tf.estimator.RunConfig(
             # tf_random_seed=878787,
             log_step_count_steps=self.p.log_step_count_steps,
-            # save_checkpoints_steps=self.p.save_checkpoints_steps,
+            save_checkpoints_steps=self.p.save_checkpoints_steps,
             # save_checkpoints_secs=HYPER_PARAMS.eval_every_secs,
             keep_checkpoint_max=self.p.keep_checkpoint_max,
             model_dir=self.p.model_dir
@@ -43,11 +44,11 @@ class Service(object):
         if not train_fn:
             self.logger.info(f'read train file into memory')
             tr = pd.read_pickle(self.p.train_files)
-            train_fn = self.inp.generate_input_fn(
+            train_fn, tr_hook = self.inp.generate_input_fn(
                 inputs=tr,
                 mode=tf.estimator.ModeKeys.TRAIN,
                 skip_header_lines=0,
-                num_epochs=1,
+                num_epochs=self.p.num_epochs,
                 batch_size=self.p.batch_size,
                 shuffle=True,
                 multi_threading=True
@@ -55,18 +56,18 @@ class Service(object):
         train_spec = tf.estimator.TrainSpec(
             train_fn,
             max_steps=self.p.train_steps,
-            # hooks=[]
+            hooks=[tr_hook]
         )
         # Valid spec
         # vl_hook = input.IteratorInitializerHook()
         if not valid_fn:
             self.logger.info(f'read valid file into memory')
             vl = pd.read_pickle(self.p.valid_files)
-            valid_fn = self.inp.generate_input_fn(
+            valid_fn, vl_hook = self.inp.generate_input_fn(
                 inputs=vl,
                 mode=tf.estimator.ModeKeys.EVAL,
                 skip_header_lines=0,
-                num_epochs=1,
+                num_epochs=self.p.num_epochs,
                 batch_size=self.p.batch_size,
                 shuffle=False,
                 multi_threading=True
@@ -76,8 +77,8 @@ class Service(object):
             steps=self.p.valid_steps,
             exporters=[exporter],
             name='estimator-eval',
-            # throttle_secs=self.p.eval_every_secs,
-            # hooks=[]
+            throttle_secs=self.p.eval_every_secs,
+            hooks=[vl_hook]
         )
 
         # train and evaluate
@@ -86,6 +87,10 @@ class Service(object):
             train_spec,
             eval_spec
         )
+        # estimator = model.get_estimator(run_config)
+        # for epoch in range(10):
+        #     estimator.train(train_fn, steps=10)
+        #     estimator.evaluate(valid_fn, steps=10)
         return self
 
     def read_transformed(self, fpath):

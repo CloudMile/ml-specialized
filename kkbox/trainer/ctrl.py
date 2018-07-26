@@ -13,7 +13,7 @@ class Ctrl(object):
     def __init__(self):
         self.service:service.Service = service.Service.instance
         self.p:app_conf.Config = app_conf.instance
-        self.feature:m.Feature = m.Feature()
+        # self.feature:m.Feature = m.Feature()
         self.input:input.Input = input.Input.instance
 
     def set_client_secret(self):

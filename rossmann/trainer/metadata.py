@@ -29,7 +29,7 @@ RAW_HEADER = ['Store', 'DayOfWeek', 'Date', 'Sales', 'Customers',
 RAW_DTYPES = [str, str, str, int, int,
               int, int, str, str, str,
               str, float, str, str, int,
-              float, float, str, str]
+              str, str, str, str]
 
 HEADER_MAPPING = {
     'Store': 'store',

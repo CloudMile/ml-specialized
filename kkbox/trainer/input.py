@@ -2,6 +2,7 @@ import numpy as np, pandas as pd, tensorflow as tf
 import json, multiprocessing
 
 from collections import OrderedDict, defaultdict
+from sklearn.utils import shuffle as sk_shuffle
 
 from . import metadata, model as m, app_conf
 from .utils import utils
@@ -12,7 +13,7 @@ class Input(object):
 
     def __init__(self):
         self.p = app_conf.instance
-        self.feature = m.Feature.instance
+        # self.feature = m.Feature.instance
         self.serving_fn = {
             'json': getattr(self, 'json_serving_input_fn'),
             'csv': getattr(self, 'csv_serving_fn')
@@ -376,12 +377,16 @@ class Input(object):
             self.logger.info("================")
             self.logger.info("")
 
-            dataset = tf.data.Dataset.from_generator(generate_fn(inputs), output_type, output_shape)
+            data = inputs
+            if shuffle:
+                self.logger.info('shuffle data manually.')
+                data = inputs.iloc[ sk_shuffle(np.arange(len(inputs))) ]
+
+            dataset = tf.data.Dataset.from_generator(generate_fn(data), output_type, output_shape)
             dataset = dataset.skip(skip_header_lines)
             dataset = dataset.map(zip_map, num_parallel_calls=num_threads)
-            if shuffle:
-                dataset = dataset.shuffle(buffer_size)
-
+            # if shuffle:
+            #     dataset = dataset.shuffle(buffer_size)
             padded_shapes = OrderedDict(zip(output_key, output_shape))
             if not is_serving:
                 padded_shapes = padded_shapes, padded_shapes.pop(metadata.TARGET_NAME)

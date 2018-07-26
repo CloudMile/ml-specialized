@@ -18,13 +18,10 @@ class Input(object):
         }
 
     def clean(self):
-        store = pd.read_csv(self.p.store_data)
-        dtypes = pd.Series(dict(zip(metadata.RAW_HEADER, metadata.RAW_DTYPES)))
-        for col in store.columns:
-            if col in dtypes:
-                typ = dtypes[col]
-                store[col] = store[col].map(typ, na_action='ignore')
-        store['CompetitionDistance'] = store.CompetitionDistance.fillna(store.CompetitionDistance.median())
+        dtypes = dict(zip(metadata.RAW_HEADER, metadata.RAW_DTYPES))
+        store = pd.read_csv(self.p.store_data, dtype=dtypes)
+
+        store['CompetitionDistance'].fillna(store.CompetitionDistance.median(), inplace=True)
         # CompetitionOpenSinceMonth, CompetitionOpenSinceYear need to be transform date diff with 1970/01/01
         year_month = pd.Series(list(zip(store.CompetitionOpenSinceYear, store.CompetitionOpenSinceMonth)))
 
@@ -33,7 +30,6 @@ class Input(object):
             if pd.isna(y) or pd.isna(m): return np.nan
             y, m = int(float(y)), int(float(m))
             return f'{y}-{m}-1'
-
         store['CompetitionOpenSince'] = (pd.to_datetime(year_month.map(map_fn)) - pd.datetime(2000, 1, 1)).dt.days
 
 

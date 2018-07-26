@@ -15,14 +15,20 @@ class Service(object):
         self.p = app_conf.instance
         self.inp = input.Input.instance
 
-    def train(self, train_fn=None, tr_hook=None, valid_fn=None, vl_hook=None, reset=True):
+    def train(self, train_fn=None, tr_hook=None, valid_fn=None, vl_hook=None,
+              reset=True, model_name='dnn'):
         if reset and tf.gfile.Exists(self.p.model_dir):
             self.logger.info(f"Delete job_dir {self.p.model_dir} to avoid re-use")
             shutil.rmtree(self.p.model_dir, ignore_errors=True)
             # tf.gfile.DeleteRecursively(self.p.model_dir)
         os.makedirs(self.p.model_dir, exist_ok=True)
 
+        sess_config = tf.ConfigProto()
+        sess_config.gpu_options.allow_growth = True
+        # Turn on XLA JIT compilation
+        sess_config.graph_options.optimizer_options.global_jit_level = tf.OptimizerOptions.ON_1
         run_config = tf.estimator.RunConfig(
+            session_config=sess_config,
             # tf_random_seed=878787,
             log_step_count_steps=self.p.log_step_count_steps,
             save_checkpoints_steps=self.p.save_checkpoints_steps,
@@ -31,7 +37,10 @@ class Service(object):
             model_dir=self.p.model_dir
         )
 
-        model = m.Model(model_dir=self.p.model_dir)
+        assert model_name in ('dnn', 'neu_mf'), "model_name only support ('dnn', 'neu_mf')"
+
+        model = m.Model(model_dir=self.p.model_dir) if model_name == 'dnn' else \
+                m.NeuMFModel(model_dir=self.p.model_dir)
         self.logger.info(f"Model Directory: {run_config.model_dir}")
 
         exporter = m.BestScoreExporter(

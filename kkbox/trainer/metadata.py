@@ -147,7 +147,8 @@ HEADER_DEFAULTS = [
 EMB_COLS = {
     'city': 3, 'gender': 3, 'registered_via': 3, 'msno_age_catg': 3,
     'song_id': 16, 'genre_ids': 8, 'artist_name': 16, 'composer': 16, 'lyricist': 16, 'language': 3,
-    'song_cc': 3, 'song_xxx': 8, 'source_system_tab': 3, 'source_screen_name': 3, 'source_type': 3
+    'song_cc': 3, 'song_xxx': 8, 'source_system_tab': 3, 'source_screen_name': 3, 'source_type': 3,
+    # 'song_query': 16,
 }
 
 # target feature name (response or class variable)

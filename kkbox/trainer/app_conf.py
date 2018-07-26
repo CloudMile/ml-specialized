@@ -28,19 +28,28 @@ class Config(object):
 
     # Data prepare relevant parameter
     valid_size = 0.2
-    model_dir = f'{model_path}/kkbox'
+    model_dir = f'{model_path}/kkbox_neumf'
     # Dir name in {model_dir}/export
     export_name = 'estimator'
 
     # Hyper parameter
     keep_checkpoint_max = 5
     log_step_count_steps = 100
-    train_steps = 3874 * 5
+    train_steps = 3874 * 1
     valid_steps = 977
     batch_size = 1000
+    # Number of loops for dataset
     num_epochs = 1
     save_checkpoints_steps = 500
     eval_every_secs = 4800
+    # Recommend to assign to same as train_steps, for tf.train.cosine_decay,
+    # and tune the alpha hyper param to control the lr won't down to zero.
+    cos_decay_steps = train_steps
+    initial_learning_rate = 0.001
+    mlp_layers = [512, 128, 64]
+    factor_layers = [32, 16]
+    # momentum = 0.99
+    reg_scale = 0.0001
 
     # Serving relevant
     serving_format = 'json' # [json]

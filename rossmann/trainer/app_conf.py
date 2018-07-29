@@ -17,6 +17,8 @@ class Config(object):
     test_data = f'{data_path}/test.csv'
 
     # Processed data path
+    cleaned_path = f'{proc_path}/cleaned'
+    prepared_path = 'f{proc_path}/prepared'
     train_full_pr = f'{proc_path}/train_full_pr.pkl'
     # Support base match pattern, see tf.matching_files function
     train_files = f'{proc_path}/train_pr.csv'

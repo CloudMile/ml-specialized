@@ -167,7 +167,9 @@ class Feature(object):
             'store': 16,
             # 'year': 16,
             'assortment': 8,
-            'store_type': 8
+            'store_type': 8,
+            'promo2since_week': 8,
+            'promo2since_year': 8,
         }
         for name in metadata.INPUT_CATEGORICAL_FEATURE_NAMES:
             if name in ('promo', 'promo2', 'open', 'school_holiday'):

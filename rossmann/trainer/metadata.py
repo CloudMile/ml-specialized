@@ -32,30 +32,42 @@ RAW_DTYPES = [str, str, str, int, int,
               str, str, str, str]
 
 HEADER_MAPPING = {
+    # train, valid, test
     'Store': 'store',
     'DayOfWeek': 'day_of_week',
     'Date': 'date',
     'Sales': 'sales',
-    # 'Customers': 'customers',
     'Open': 'open',
     'Promo': 'promo',
     'StateHoliday': 'state_holiday',
     'SchoolHoliday': 'school_holiday',
+    # store
     'StoreType': 'store_type',
     'Assortment': 'assortment',
+    'CompetitionDistance': 'competition_distance',
+    'CompetitionOpenSinceMonth': 'competition_open_since_month',
+    'CompetitionOpenSinceYear': 'competition_open_sinceYear',
+    'Promo2SinceWeek': 'promo2since_week',
+    'Promo2SinceYear': 'promo2since_year',
+    # store_states
     'State': 'state'
 }
+
 
 # list of all the columns (header) of the input data file(s)
 HEADER = ['store', 'day_of_week', 'open', 'promo2',
           'promo', 'state_holiday', 'school_holiday', 'store_type', 'assortment',
-          'state', 'month', 'day', 'sales_mean',
+          'state', 'month', 'day', 'sales_mean', 'competition_open_since',
+          'competition_distance', 'competition_open_since_month', 'competition_open_sinceYear',
+          'promo2since',
           'sales']
 
 # list of the default values of all the columns of the input data, to help decoding the data types of the columns
 HEADER_DEFAULTS = [[0], [0], [0], [0],
                    [0], [''], [0], [''], [''],
-                   [''], [0], [0], [0.0],
+                   [''], [0], [0], [0.0], [0.0],
+                   [0.0], [''], [''],
+                   [0.0],
                    [0.0]]
 
 # list of the feature names of type int or float
@@ -63,7 +75,7 @@ INPUT_NUMERIC_FEATURE_NAMES = ['sales_mean']
 
 # numeric features constructed, if any, in process_features function in input.py module,
 # as part of reading data
-CONSTRUCTED_NUMERIC_FEATURE_NAMES = []
+CONSTRUCTED_NUMERIC_FEATURE_NAMES = ['competition_open_since', 'promo2since', 'competition_distance']
 
 # a dictionary of feature names with int values, but to be treated as categorical features.
 # In the dictionary, the key is the feature name, and the value is the num_buckets (count of distinct values)
@@ -87,7 +99,7 @@ INPUT_CATEGORICAL_FEATURE_NAMES_WITH_VOCABULARY = {
     'state': ['HE', 'HH', 'SH', 'NW', 'BE', 'BY', 'SN', 'RP', 'TH', 'HB,NI', 'BW', 'ST'],
     'state_holiday': ['a', '0', 'b', 'c'],
     'assortment': ['a', 'b', 'c', '0'],
-    'store_type': ['a', 'b', 'c', 'd']
+    'store_type': ['a', 'b', 'c', 'd'],
 }
 
 # a dictionary of categorical features with many values (sparse features)

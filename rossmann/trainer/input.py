@@ -2,6 +2,7 @@ import numpy as np, pandas as pd, tensorflow as tf
 import json, multiprocessing
 
 from collections import OrderedDict, defaultdict
+from datetime import datetime, timedelta
 
 from . import metadata, model as m, app_conf, utils
 
@@ -17,52 +18,61 @@ class Input(object):
             'csv': getattr(self, 'csv_serving_fn')
         }
 
-    def clean(self):
-        dtypes = dict(zip(metadata.RAW_HEADER, metadata.RAW_DTYPES))
-        store = pd.read_csv(self.p.store_data, dtype=dtypes)
+    def clean(self, is_serving=False):
+        self.logger.info(f'Cleaning ..., is_serving: {is_serving}')
+        if not is_serving:
+            dtypes = dict(zip(metadata.RAW_HEADER, metadata.RAW_DTYPES))
+            store = pd.read_csv(self.p.store_data, dtype=dtypes)
+            store['CompetitionDistance'].fillna(store.CompetitionDistance.median(), inplace=True)
+            store.to_csv(f'{self.p.cleaned_path}/store.csv')
 
-        store['CompetitionDistance'].fillna(store.CompetitionDistance.median(), inplace=True)
-        # CompetitionOpenSinceMonth, CompetitionOpenSinceYear need to be transform date diff with 1970/01/01
-        year_month = pd.Series(list(zip(store.CompetitionOpenSinceYear, store.CompetitionOpenSinceMonth)))
+    def prepare(self, fobj, dump=False, is_serving=False):
+        self.logger.info(f'Prepare ..., is_serving: {is_serving}')
+        raw_dtype = dict(zip(metadata.RAW_HEADER, metadata.RAW_DTYPES))
 
-        def map_fn(e):
-            y, m = e
-            if pd.isna(y) or pd.isna(m): return np.nan
-            y, m = int(float(y)), int(float(m))
-            return f'{y}-{m}-1'
-        store['CompetitionOpenSince'] = (pd.to_datetime(year_month.map(map_fn)) - pd.datetime(2000, 1, 1)).dt.days
-
-
-    def prepare(self, fobj, dump=False, is_train=True):
-        """
-
-        :param fobj:
-        :param dump:
-        :param is_train:
-        :return:
-        """
-
-        data = pd.read_csv(fobj)
+        data = pd.read_csv(fobj, dtype=raw_dtype)
         data['StateHoliday'] = data.StateHoliday.map(str)
-        dt = pd.to_datetime(data.Date)
-        # Side inputs
-        # st_drop_cols = [
-        #     'CompetitionDistance', 'CompetitionOpenSinceMonth', 'CompetitionOpenSinceYear',
-        #     'Promo2SinceWeek', 'Promo2SinceYear']
 
-        store = pd.read_csv(self.p.store_data) # .drop(st_drop_cols, 1)
+        # Side inputs
+
         store_states = pd.read_csv(self.p.store_state)
+        if not is_serving:
+            store = pd.read_csv(f'{self.p.cleaned_path}/store.csv')
+            # CompetitionOpenSinceMonth, CompetitionOpenSinceYear need to be transform to days count from 1970/01/01
+            def map_fn(e):
+                y, m = e
+                if pd.isna(y) or pd.isna(m): return np.nan
+                # y, m = int(float(y)), int(float(m))
+                return f'{y}-{m}-1'
+
+            since_dt = pd.Series(list(zip(store.CompetitionOpenSinceYear, store.CompetitionOpenSinceMonth))).map(map_fn, na_action='ignore')
+            store['competition_open_since'] = (pd.to_datetime(since_dt) - datetime(1970, 1, 1)).dt.days
+            store['competition_open_since'].fillna(store['competition_open_since'].median(), inplace=True)
+
+            # Promo2SinceYear + Promo2SinceWeek need to be transform to days count from 1970/01/01
+            def promo2_fn(e):
+                y, week = e
+                if pd.isna(y) or pd.isna(week):
+                    return np.nan
+                return datetime.strptime(f'{y}',
+                                         '%Y')  # (datetime.strptime(f'{y}', '%Y') + timedelta(weeks=int(week)) - datetime(1970, 1, 1)).days
+
+            promo2_dt = pd.Series(list(zip(store.Promo2SinceYear, store.Promo2SinceWeek))).map(promo2_fn)
+            store['promo2since'] = (promo2_dt - datetime(1970, 1, 1)).dt.days
+            store['promo2since'].fillna(store['promo2since'].median(), inplace=True)
+
+            self.logger.info(f'Persisten store to {self.p.prepared_path}/store.csv')
+            store.to_csv('{self.p.prepared_path}/store.csv', index=False)
+        else:
+            store = pd.read_csv(f'{self.p.prepared_path}/store.csv', dtype=raw_dtype)
 
         merge = data.merge(store, how='left', on='Store').merge(store_states, how='left', on='Store')
-        del store, store_states
 
         # Construct year, month, day columns, maybe on specific day or period will has some trends.
-        year, month, day = [], [], []
-        dt.map(lambda e: [year.append(e.year), month.append(e.month), day.append(e.day)]).head()
-        merge['year'] = year
-        merge['month'] = month
-        merge['day'] = day
-        del year, month, day
+        dt = pd.to_datetime(data.Date)
+        merge['year'] = dt.dt.year
+        merge['month'] = dt.dt.month
+        merge['day'] = dt.dt.day
 
         # Calculate real promo2 happened timing, promo2 have periodicity per year,
         # e.g: if PromoInterval = 'Jan,Apr,Jul,Oct', means month in 1, 4, 7, 10 in every year will
@@ -73,7 +83,7 @@ class Input(object):
 
         # Construct sales mean columns, at least we know whether this store is popular
         sales_mean = None
-        if is_train:
+        if not is_serving:
             sales_mean = merge.groupby('Store').Sales.mean()
         else:
             with open(self.p.feature_stats_file, 'r') as fp:
@@ -84,15 +94,14 @@ class Input(object):
             sales_mean = pd.Series(index=sales_mean.index.map(int), data=sales_mean.data)
 
         merge['sales_mean'] = sales_mean.reindex(merge.Store).values
-
         # Change column name style to PEP8 and resort columns order
-        dtype = self.get_processed_dtype()
-        if is_train:
+        # dtype = self.get_processed_dtype()
+        if not is_serving:
             merge = merge.rename(index=str, columns=metadata.HEADER_MAPPING)
             # Add date for split train valid
             merge = merge.query('open == 1')[['date'] + metadata.HEADER]
         else:
-            dtype.pop(metadata.TARGET_NAME)
+            # dtype.pop(metadata.TARGET_NAME)
             columns = metadata.HEADER_MAPPING.copy()
             columns.pop('Sales')
             merge = merge.rename(index=str, columns=columns)

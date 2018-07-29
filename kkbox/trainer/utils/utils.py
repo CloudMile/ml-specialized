@@ -283,7 +283,7 @@ class CountMapper(CatgMapper):
      keep index = 0 for outlier.
     """
     def __init__(self, lowest_freq_thres=0, **kw):
-        super().__init__(**kw)
+        super(CountMapper, self).__init__(**kw)
         self.lowest_freq_thres = lowest_freq_thres
         self.counter = Counter()
         self.freq_ = []

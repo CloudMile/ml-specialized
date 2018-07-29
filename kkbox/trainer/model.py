@@ -120,34 +120,47 @@ class Model(object):
                 [self.source_system_tab, self.source_screen_name, self.source_type], 1, name='context_features')
             self.logger.info(f'self.context_features: {self.context_features}')
 
-    def factor_encode(self, uniform_init_fn, has_context=True, name='factor_mlp'):
+    def factor_encode(self, uniform_init_fn, has_context=True, mode=None, name='factor_mlp'):
+        is_train = mode == tf.estimator.ModeKeys.TRAIN
         ret = []
         with tf.variable_scope(name):
             factors = (self.members_feature, self.songs_feature, self.context_features) if has_context else \
                       (self.members_feature, self.songs_feature)
             for factor in factors:
                 for layer in self.p.factor_layers:
-                    factor = \
-                        tf.layers.dense(factor, layer, kernel_initializer=uniform_init_fn,
-                                        kernel_regularizer=tf.contrib.layers.l2_regularizer(self.p.reg_scale),
-                                        activation=tf.nn.selu)
+                    factor = tf.layers.dense(factor, layer, kernel_initializer=uniform_init_fn,
+                                    kernel_constraint=tf.keras.constraints.max_norm(),
+                                    # kernel_regularizer=tf.contrib.layers.l2_regularizer(self.p.reg_scale),
+                                    activation=None)
+                    factor = tf.nn.relu(tf.layers.batch_normalization(factor))
+                    # if is_train and self.p.drop_rate > 0:
+                    #     factor = alpha_dropout(factor, keep_prob=1 - self.p.drop_rate)
+
                 ret.append(factor)
         return ret
 
     def model_fn(self, features, labels, mode):
+        is_train = mode == tf.estimator.ModeKeys.TRAIN
+        self.logger.info(f'mode: {mode}, is_train: {is_train}, use dropout: {is_train and self.p.drop_rate > 0}')
+
         self.base_features(features, labels, mode)
 
         uniform_init_fn = tf.glorot_uniform_initializer()
         self.members_feature, self.songs_feature, self.context_features = (
-            self.factor_encode(uniform_init_fn, has_context=True, name='factor_mlp'))
+            self.factor_encode(uniform_init_fn, has_context=True, mode=mode, name='factor_mlp'))
 
         with tf.variable_scope("dnn", reuse=tf.AUTO_REUSE):
             net = tf.concat([self.members_feature, self.songs_feature, self.context_features], 1)
             self.logger.info(f'net: {net}')
             for layer in self.p.mlp_layers:
                 net = tf.layers.dense(net, layer, kernel_initializer=uniform_init_fn,
-                                      kernel_regularizer=tf.contrib.layers.l2_regularizer(self.p.reg_scale),
-                                      activation=tf.nn.selu)
+                                      kernel_constraint=tf.keras.constraints.max_norm(),
+                                      # kernel_regularizer=tf.contrib.layers.l2_regularizer(self.p.reg_scale),
+                                      activation=None)
+                net = tf.nn.relu(tf.layers.batch_normalization(net))
+                if is_train and self.p.drop_rate > 0:
+                    net = tf.layers.dropout(net, rate=self.p.drop_rate, training=is_train)
+
             self.logits = tf.layers.dense(net, 1, kernel_initializer=uniform_init_fn, activation=None)
             self.pred = tf.nn.sigmoid(self.logits, name='pred')
 
@@ -277,28 +290,40 @@ class NeuMFModel(Model):
         super(NeuMFModel, self).__init__(*args, **kwargs)
 
     def model_fn(self, features, labels, mode):
+        is_train = mode == tf.estimator.ModeKeys.TRAIN
+        self.logger.info(f'mode: {mode}, is_train: {is_train}, use dropout: {is_train and self.p.drop_rate > 0}')
+
         self.base_features(features, labels, mode)
 
         uniform_init_fn = tf.glorot_uniform_initializer()
         mlp_members, mlp_songs, mlp_conext = (
-            self.factor_encode(uniform_init_fn, has_context=True, name='factor_mlp'))
+            self.factor_encode(uniform_init_fn, has_context=True, mode=mode, name='factor_mlp'))
 
         with tf.variable_scope("mlp", reuse=tf.AUTO_REUSE):
             self.mlp_vector = tf.concat([mlp_members, mlp_songs, mlp_conext], 1)
             for layer in self.p.mlp_layers:
                 self.mlp_vector = tf.layers.dense(self.mlp_vector, layer,
                                       kernel_initializer=uniform_init_fn,
-                                      kernel_regularizer=tf.contrib.layers.l2_regularizer(self.p.reg_scale),
-                                      activation=tf.nn.selu)
+                                      kernel_constraint=tf.keras.constraints.max_norm(),
+                                      # kernel_regularizer=tf.contrib.layers.l2_regularizer(self.p.reg_scale),
+                                      activation=None)
+                self.mlp_vector = tf.nn.relu(tf.layers.batch_normalization(self.mlp_vector))
+                if is_train and self.p.drop_rate > 0:
+                    self.mlp_vector = tf.layers.dropout(self.mlp_vector, self.p.drop_rate, training=is_train)
+                    # self.mlp_vector = alpha_dropout(self.mlp_vector, keep_prob=1 - self.p.drop_rate)
 
-        mf_members, mf_songs = self.factor_encode(uniform_init_fn, has_context=False, name='factor_mf')
+        mf_members, mf_songs = self.factor_encode(uniform_init_fn, has_context=False, mode=mode, name='factor_mf')
         with tf.variable_scope("mf", reuse=tf.AUTO_REUSE):
             self.mf_vector = tf.multiply(mf_members, mf_songs)
+            self.mf_vector = tf.nn.relu(tf.layers.batch_normalization(self.mf_vector))
+            if self.p.drop_rate > 0:
+                self.mf_vector = tf.layers.dropout(self.mf_vector, rate=self.p.drop_rate, training=is_train)
 
         with tf.variable_scope("concatenate", reuse=tf.AUTO_REUSE):
             self.net = tf.concat([self.mf_vector, self.mlp_vector], 1)
             self.logits = tf.layers.dense(self.net, 1, kernel_initializer=uniform_init_fn,
-                            kernel_regularizer=tf.contrib.layers.l2_regularizer(self.p.reg_scale),
+                            kernel_constraint=tf.keras.constraints.max_norm(),
+                            # kernel_regularizer=tf.contrib.layers.l2_regularizer(self.p.reg_scale),
                             activation=None)
             self.pred = tf.nn.sigmoid(self.logits)
 
@@ -317,6 +342,7 @@ class NeuMFModel(Model):
             self.labels = tf.to_float(labels[:, tf.newaxis])
             self.loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.labels, logits=self.logits))
             for reg_term in tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES):
+                self.logger.info(f'reg_term: {reg_term.name}')
                 self.loss += reg_term
             tf.summary.scalar('loss', self.loss)
 
@@ -336,10 +362,9 @@ class NeuMFModel(Model):
                                                       self.p.cos_decay_steps,
                                                       alpha=0.1)
                 tf.summary.scalar("learning_rate", learning_rate)
-
                 self.train_op = tf.train.AdamOptimizer(learning_rate).minimize(self.loss, global_step=self.global_step)
-                # self.train_op = tf.train.MomentumOptimizer(learning_rate, self.p.momentum)\
-                #                         .minimize(self.loss, self.global_step)
+                # self.train_op = tf.train.MomentumOptimizer(learning_rate, momentum=0.99, use_nesterov=True)\
+                #                   .minimize(self.loss, global_step=self.global_step)
 
         return tf.estimator.EstimatorSpec(
             mode=mode,

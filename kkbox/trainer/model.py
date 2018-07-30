@@ -131,10 +131,10 @@ class Model(object):
                     factor = tf.layers.dense(factor, layer, kernel_initializer=uniform_init_fn,
                                     kernel_constraint=tf.keras.constraints.max_norm(),
                                     # kernel_regularizer=tf.contrib.layers.l2_regularizer(self.p.reg_scale),
-                                    activation=None)
-                    factor = tf.nn.relu(tf.layers.batch_normalization(factor))
-                    # if is_train and self.p.drop_rate > 0:
-                    #     factor = alpha_dropout(factor, keep_prob=1 - self.p.drop_rate)
+                                    activation=tf.nn.selu)
+                    # factor = tf.nn.relu(tf.layers.batch_normalization(factor))
+                    if is_train and self.p.drop_rate > 0:
+                        factor = alpha_dropout(factor, keep_prob=1 - self.p.drop_rate)
 
                 ret.append(factor)
         return ret
@@ -156,10 +156,11 @@ class Model(object):
                 net = tf.layers.dense(net, layer, kernel_initializer=uniform_init_fn,
                                       kernel_constraint=tf.keras.constraints.max_norm(),
                                       # kernel_regularizer=tf.contrib.layers.l2_regularizer(self.p.reg_scale),
-                                      activation=None)
-                net = tf.nn.relu(tf.layers.batch_normalization(net))
+                                      activation=tf.nn.selu)
+                # net = tf.nn.relu(tf.layers.batch_normalization(net))
                 if is_train and self.p.drop_rate > 0:
-                    net = tf.layers.dropout(net, rate=self.p.drop_rate, training=is_train)
+                    net = alpha_dropout(net, 1 - self.p.drop_rate)
+                    # net = tf.layers.dropout(net, rate=self.p.drop_rate, training=is_train)
 
             self.logits = tf.layers.dense(net, 1, kernel_initializer=uniform_init_fn, activation=None)
             self.pred = tf.nn.sigmoid(self.logits, name='pred')
@@ -183,7 +184,7 @@ class Model(object):
             tf.summary.scalar('loss', self.loss)
 
         with tf.variable_scope("metrics") as scope:
-            self.auc = tf.metrics.auc(tf.cast(self.labels, tf.bool), tf.reshape(self.pred, [-1]))
+            self.auc = tf.metrics.auc(tf.cast(self.labels, tf.bool), self.pred)
             tf.summary.scalar('auc', self.auc[0])
 
         self.train_op = None
@@ -306,17 +307,17 @@ class NeuMFModel(Model):
                                       kernel_initializer=uniform_init_fn,
                                       kernel_constraint=tf.keras.constraints.max_norm(),
                                       # kernel_regularizer=tf.contrib.layers.l2_regularizer(self.p.reg_scale),
-                                      activation=None)
-                self.mlp_vector = tf.nn.relu(tf.layers.batch_normalization(self.mlp_vector))
+                                      activation=tf.nn.selu)
+                # self.mlp_vector = tf.nn.relu(tf.layers.batch_normalization(self.mlp_vector))
                 if is_train and self.p.drop_rate > 0:
-                    self.mlp_vector = tf.layers.dropout(self.mlp_vector, self.p.drop_rate, training=is_train)
-                    # self.mlp_vector = alpha_dropout(self.mlp_vector, keep_prob=1 - self.p.drop_rate)
+                    # self.mlp_vector = tf.layers.dropout(self.mlp_vector, self.p.drop_rate, training=is_train)
+                    self.mlp_vector = alpha_dropout(self.mlp_vector, keep_prob=1 - self.p.drop_rate)
 
         mf_members, mf_songs = self.factor_encode(uniform_init_fn, has_context=False, mode=mode, name='factor_mf')
         with tf.variable_scope("mf", reuse=tf.AUTO_REUSE):
             self.mf_vector = tf.multiply(mf_members, mf_songs)
-            self.mf_vector = tf.nn.relu(tf.layers.batch_normalization(self.mf_vector))
-            if self.p.drop_rate > 0:
+            # self.mf_vector = tf.nn.relu(tf.layers.batch_normalization(self.mf_vector))
+            if is_train and self.p.drop_rate > 0:
                 self.mf_vector = tf.layers.dropout(self.mf_vector, rate=self.p.drop_rate, training=is_train)
 
         with tf.variable_scope("concatenate", reuse=tf.AUTO_REUSE):
@@ -347,7 +348,7 @@ class NeuMFModel(Model):
             tf.summary.scalar('loss', self.loss)
 
         with tf.variable_scope("metrics") as scope:
-            self.auc = tf.metrics.auc(tf.cast(self.labels, tf.bool), tf.reshape(self.pred, [-1]))
+            self.auc = tf.metrics.auc(tf.cast(self.labels, tf.bool), self.pred)
             tf.summary.scalar('auc', self.auc[0])
 
         self.train_op = None
@@ -363,8 +364,8 @@ class NeuMFModel(Model):
                                                       alpha=0.1)
                 tf.summary.scalar("learning_rate", learning_rate)
                 self.train_op = tf.train.AdamOptimizer(learning_rate).minimize(self.loss, global_step=self.global_step)
-                # self.train_op = tf.train.MomentumOptimizer(learning_rate, momentum=0.99, use_nesterov=True)\
-                #                   .minimize(self.loss, global_step=self.global_step)
+                # self.train_op = tf.train.GradientDescentOptimizer(learning_rate)\
+                #                         .minimize(self.loss, global_step=self.global_step)
 
         return tf.estimator.EstimatorSpec(
             mode=mode,

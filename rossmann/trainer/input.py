@@ -1,5 +1,5 @@
 import numpy as np, pandas as pd, tensorflow as tf
-import json, multiprocessing
+import json, multiprocessing, shutil
 
 from collections import OrderedDict, defaultdict
 from datetime import datetime, timedelta
@@ -18,26 +18,44 @@ class Input(object):
             'csv': getattr(self, 'csv_serving_fn')
         }
 
-    def clean(self, is_serving=False):
-        self.logger.info(f'Cleaning ..., is_serving: {is_serving}')
+    def clean(self, data, is_serving=False):
+        self.logger.info(f'Clean start, is_serving: {is_serving}')
+        s = datetime.now()
+        if isinstance(data, str):
+            data = pd.read_csv(data)
+
+        ret = None
+        # Handle missing value and change column name style to PEP8 and resort columns order
         if not is_serving:
             dtypes = dict(zip(metadata.RAW_HEADER, metadata.RAW_DTYPES))
             store = pd.read_csv(self.p.store_data, dtype=dtypes)
             store['CompetitionDistance'].fillna(store.CompetitionDistance.median(), inplace=True)
-            store.to_csv(f'{self.p.cleaned_path}/store.csv')
+            store = store.rename(index=str, columns=metadata.HEADER_MAPPING)
+            store.to_csv(f'{self.p.cleaned_path}/store.csv', index=False)
 
-    def prepare(self, fobj, dump=False, is_serving=False):
-        self.logger.info(f'Prepare ..., is_serving: {is_serving}')
-        raw_dtype = dict(zip(metadata.RAW_HEADER, metadata.RAW_DTYPES))
+            store_state = pd.read_csv(self.p.store_state, dtype=dtypes)
+            store_state = store_state.rename(index=str, columns=metadata.HEADER_MAPPING)
+            store_state.to_csv(f'{self.p.cleaned_path}/store_state.csv', index=False)
 
-        data = pd.read_csv(fobj, dtype=raw_dtype)
-        data['StateHoliday'] = data.StateHoliday.map(str)
+            ret = data.rename(index=str, columns=metadata.HEADER_MAPPING)
+            ret.to_csv(f'{self.p.cleaned_path}/tr.csv', index=False)
+        else:
+            ret = data.rename(index=str, columns=metadata.HEADER_MAPPING)
 
-        # Side inputs
+        self.logger.info(f'Clean take time {datetime.now() - s}')
+        return ret
 
-        store_states = pd.read_csv(self.p.store_state)
+    def prepare(self, data, is_serving=False):
+        self.logger.info(f'Prepare start, is_serving: {is_serving}')
+        s = datetime.now()
+
+        dtype = self.get_processed_dtype()
+        if isinstance(data, str):
+            data = pd.read_csv(data, dtype=dtype)
+
+        # Train, eval
         if not is_serving:
-            store = pd.read_csv(f'{self.p.cleaned_path}/store.csv')
+            store = pd.read_csv(f'{self.p.cleaned_path}/store.csv', dtype=dtype)
             # CompetitionOpenSinceMonth, CompetitionOpenSinceYear need to be transform to days count from 1970/01/01
             def map_fn(e):
                 y, m = e
@@ -45,46 +63,58 @@ class Input(object):
                 # y, m = int(float(y)), int(float(m))
                 return f'{y}-{m}-1'
 
-            since_dt = pd.Series(list(zip(store.CompetitionOpenSinceYear, store.CompetitionOpenSinceMonth))).map(map_fn, na_action='ignore')
+            since_dt = pd.Series(list(zip(store.competition_open_since_year, store.competition_open_since_month)))\
+                         .map(map_fn, na_action='ignore')
             store['competition_open_since'] = (pd.to_datetime(since_dt) - datetime(1970, 1, 1)).dt.days
             store['competition_open_since'].fillna(store['competition_open_since'].median(), inplace=True)
+            store['competition_open_since_year'].fillna('', inplace=True)
+            store['competition_open_since_month'].fillna('', inplace=True)
 
             # Promo2SinceYear + Promo2SinceWeek need to be transform to days count from 1970/01/01
             def promo2_fn(e):
                 y, week = e
                 if pd.isna(y) or pd.isna(week):
                     return np.nan
-                return datetime.strptime(f'{y}',
-                                         '%Y')  # (datetime.strptime(f'{y}', '%Y') + timedelta(weeks=int(week)) - datetime(1970, 1, 1)).days
+                return datetime.strptime(f'{y}', '%Y')
+            # (datetime.strptime(f'{y}', '%Y') + timedelta(weeks=int(week)) - datetime(1970, 1, 1)).days
 
-            promo2_dt = pd.Series(list(zip(store.Promo2SinceYear, store.Promo2SinceWeek))).map(promo2_fn)
+            promo2_dt = pd.Series(list(zip(store.promo2since_year, store.promo2since_week))).map(promo2_fn)
             store['promo2since'] = (promo2_dt - datetime(1970, 1, 1)).dt.days
             store['promo2since'].fillna(store['promo2since'].median(), inplace=True)
+            store['promo2since_year'].fillna('', inplace=True)
+            store['promo2since_week'].fillna('', inplace=True)
 
             self.logger.info(f'Persisten store to {self.p.prepared_path}/store.csv')
-            store.to_csv('{self.p.prepared_path}/store.csv', index=False)
+            store.to_csv(f'{self.p.prepared_path}/store.csv', index=False)
+            # Simple copy store_state.csv to prepare dir
+            shutil.copy2(f'{self.p.cleaned_path}/store_state.csv', f'{self.p.prepared_path}')
         else:
-            store = pd.read_csv(f'{self.p.prepared_path}/store.csv', dtype=raw_dtype)
-
-        merge = data.merge(store, how='left', on='Store').merge(store_states, how='left', on='Store')
+            store = pd.read_csv(f'{self.p.prepared_path}/store.csv', dtype=dtype)
 
         # Construct year, month, day columns, maybe on specific day or period will has some trends.
-        dt = pd.to_datetime(data.Date)
-        merge['year'] = dt.dt.year
-        merge['month'] = dt.dt.month
-        merge['day'] = dt.dt.day
+        dt = pd.to_datetime(data['date'])
+        data['year'] = dt.dt.year
+        data['month'] = dt.dt.month
+        data['day'] = dt.dt.day
+
+        store_states = pd.read_csv(f'{self.p.prepared_path}/store_state.csv', dtype=dtype)
+        merge = data.merge(store, how='left', on='store').merge(store_states, how='left', on='store')
 
         # Calculate real promo2 happened timing, promo2 have periodicity per year,
         # e.g: if PromoInterval = 'Jan,Apr,Jul,Oct', means month in 1, 4, 7, 10 in every year will
         # have another promotion on some products, so it need to drop origin Promo2
         # and recalculate if has any promotion
         merge['promo2'] = self.cal_promo2(merge)
-        merge = merge.drop(['Promo2', 'PromoInterval'], 1)
+        merge = merge.drop('promo_interval', 1)
 
         # Construct sales mean columns, at least we know whether this store is popular
-        sales_mean = None
         if not is_serving:
-            sales_mean = merge.groupby('Store').Sales.mean()
+            sales_mean = merge.groupby('store').sales.mean()
+            merge['sales_mean'] = sales_mean.reindex(merge.store).values
+
+            # Add date for split train valid
+            merge = merge.query('open == 1')[['date'] + metadata.HEADER]
+            merge.to_csv(f'{self.p.prepared_path}/tr.csv', index=False)
         else:
             with open(self.p.feature_stats_file, 'r') as fp:
                 stats = json.load(fp)
@@ -92,24 +122,12 @@ class Input(object):
             # so change the data type to int
             sales_mean = pd.Series(stats['sales_mean']['hist_mapping'])
             sales_mean = pd.Series(index=sales_mean.index.map(int), data=sales_mean.data)
+            merge['sales_mean'] = sales_mean.reindex(merge.store).values
 
-        merge['sales_mean'] = sales_mean.reindex(merge.Store).values
-        # Change column name style to PEP8 and resort columns order
-        # dtype = self.get_processed_dtype()
-        if not is_serving:
-            merge = merge.rename(index=str, columns=metadata.HEADER_MAPPING)
-            # Add date for split train valid
-            merge = merge.query('open == 1')[['date'] + metadata.HEADER]
-        else:
             # dtype.pop(metadata.TARGET_NAME)
-            columns = metadata.HEADER_MAPPING.copy()
-            columns.pop('Sales')
-            merge = merge.rename(index=str, columns=columns)
             merge = merge[metadata.SERVING_COLUMNS]
 
-        # Persistent in prepare stage
-        if dump:
-            merge.to_pickle(self.p.train_full_pr)
+        self.logger.info(f'Prepare take time {datetime.now() - s}')
         return merge
 
     def fit(self, data):
@@ -133,27 +151,31 @@ class Input(object):
             json.dump(stats, fp)
         return self
 
-    def transform(self, data:pd.DataFrame, is_train=True):
-        """Transform columns value, maybe include catg column to int, numeric column normalize...
-        1. change column value
-        2. handle missing value
-        3. handle data type
+    def transform(self, data, is_serving=False):
+        """Transform columns value, maybe include categorical column to int, numeric column normalize...,
+          but in this case, we leave it to tf.feature_columns package, only do `np.log1p(target)` here
+          for the sake of shrinking scale of sales
 
         :param data:
         :param is_train:
         :return:
         """
-        data = data.copy()
-        dtype = self.get_processed_dtype()
+        self.logger.info(f'Prepare start, is_serving: {is_serving}')
+        s = datetime.now()
 
-        if is_train:
+        dtype = self.get_processed_dtype()
+        if isinstance(data, str):
+            data = pd.read_csv(data, dtype=dtype)
+
+        if not is_serving:
             self.logger.info(f'Do np.log(data.{metadata.TARGET_NAME}) !')
             data[metadata.TARGET_NAME] = np.log1p(data[metadata.TARGET_NAME])
-        else:
-            del dtype[metadata.TARGET_NAME]
-            data['open'] = data.open.fillna(0)
+        # else:
+        #     del dtype[metadata.TARGET_NAME]
+        #     data['open'] = data.open.fillna(0)
 
-        return data.astype(dtype=dtype)
+        self.logger.info(f'Transform take time {datetime.now() - s}')
+        return data.astype(dtype=dtype, errors='ignore')
 
     def split(self, data):
         """Merged training data
@@ -161,8 +183,14 @@ class Input(object):
         :param data:
         :return:
         """
+        self.logger.info(f'Split start')
+        s = datetime.now()
+        dtype = self.get_processed_dtype()
+        if isinstance(data, str):
+            data = pd.read_csv(data, dtype=dtype)
+
         tr, vl = [], []
-        for st, df in data.groupby(['store']):
+        for st, df in data.groupby('store'):
             # Split order by date
             df = df.sort_values('date')
             total = len(df)
@@ -179,6 +207,8 @@ class Input(object):
 
         tr.drop('date', 1).to_csv(self.p.train_files, index=False)
         vl.drop('date', 1).to_csv(self.p.valid_files, index=False)
+
+        self.logger.info(f'Split take time {datetime.now() - s}')
         return self
 
     def cal_promo2(selfself, merge):
@@ -191,10 +221,10 @@ class Input(object):
                 'May': 5, 'Jun': 6, 'Jul': 7, 'Aug': 8,
                 'Sept': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12}
         base = np.zeros(len(merge))
-        valid_cond = merge.Promo2 == 1
+        valid_cond = merge.promo2 == 1
         merge = merge[valid_cond]
         df = pd.DataFrame({'month': merge.month.values,
-                           'interval': merge.PromoInterval.str.split(',').values})
+                           'interval': merge.promo_interval.str.split(',').values})
 
         cut_idx = np.cumsum(df.interval.map(len).values)
         interval_concat = []

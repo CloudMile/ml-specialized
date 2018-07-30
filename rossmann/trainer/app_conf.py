@@ -18,14 +18,17 @@ class Config(object):
 
     # Processed data path
     cleaned_path = f'{proc_path}/cleaned'
-    prepared_path = 'f{proc_path}/prepared'
+    prepared_path = f'{proc_path}/prepared'
+    fitted_path = f'{proc_path}/fitted'
+    transformed_path = f'{proc_path}/transformed'
+
     train_full_pr = f'{proc_path}/train_full_pr.pkl'
     # Support base match pattern, see tf.matching_files function
-    train_files = f'{proc_path}/train_pr.csv'
-    valid_files = f'{proc_path}/valid_pr.csv'
-    feature_stats_file = f'{proc_path}/stats.json'
-    tr_dt_file = f'{proc_path}/tr_date.json'
-    vl_dt_file = f'{proc_path}/vl_date.json'
+    train_files = f'{transformed_path}/tr.csv'
+    valid_files = f'{transformed_path}/vl.csv'
+    feature_stats_file = f'{fitted_path}/stats.json'
+    tr_dt_file = f'{transformed_path}/tr_date.json'
+    vl_dt_file = f'{transformed_path}/vl_date.json'
 
     # Data prepare relevant parameter
     valid_size = 0.3

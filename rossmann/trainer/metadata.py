@@ -41,14 +41,17 @@ HEADER_MAPPING = {
     'Promo': 'promo',
     'StateHoliday': 'state_holiday',
     'SchoolHoliday': 'school_holiday',
+    'Customers': 'customers',
     # store
     'StoreType': 'store_type',
     'Assortment': 'assortment',
     'CompetitionDistance': 'competition_distance',
     'CompetitionOpenSinceMonth': 'competition_open_since_month',
-    'CompetitionOpenSinceYear': 'competition_open_sinceYear',
+    'CompetitionOpenSinceYear': 'competition_open_since_year',
     'Promo2SinceWeek': 'promo2since_week',
     'Promo2SinceYear': 'promo2since_year',
+    'Promo2': 'promo2',
+    'PromoInterval': 'promo_interval',
     # store_states
     'State': 'state'
 }
@@ -57,17 +60,19 @@ HEADER_MAPPING = {
 # list of all the columns (header) of the input data file(s)
 HEADER = ['store', 'day_of_week', 'open', 'promo2',
           'promo', 'state_holiday', 'school_holiday', 'store_type', 'assortment',
-          'state', 'month', 'day', 'sales_mean', 'competition_open_since',
-          'competition_distance', 'competition_open_since_month', 'competition_open_sinceYear',
-          'promo2since',
+          'state', 'year', 'month', 'day', 'sales_mean',
+          'competition_distance',
+          'competition_open_since', 'competition_open_since_month', 'competition_open_since_year',
+          'promo2since', 'promo2since_week', 'promo2since_year',
           'sales']
 
 # list of the default values of all the columns of the input data, to help decoding the data types of the columns
 HEADER_DEFAULTS = [[0], [0], [0], [0],
                    [0], [''], [0], [''], [''],
-                   [''], [0], [0], [0.0], [0.0],
-                   [0.0], [''], [''],
+                   [''], [''], [0], [0], [0.0],
                    [0.0],
+                   [0.0], [''], [''],
+                   [0.0], [''], [''],
                    [0.0]]
 
 # list of the feature names of type int or float
@@ -100,6 +105,15 @@ INPUT_CATEGORICAL_FEATURE_NAMES_WITH_VOCABULARY = {
     'state_holiday': ['a', '0', 'b', 'c'],
     'assortment': ['a', 'b', 'c', '0'],
     'store_type': ['a', 'b', 'c', 'd'],
+    'competition_open_since_month': ['9', '11', '12', '4', '10', '8', '3', '6', '5', '1', '2', '7'],
+    'competition_open_since_year': ['2008', '2007', '2006', '2009', '2015', '2013', '2014', '2000',
+                                    '2011', '2010', '2005', '1999', '2003', '2012', '2004', '2002',
+                                    '1961', '1995', '2001', '1990', '1994', '1900', '1998'],
+    'promo2since_week': ['13', '14', '1', '45', '40', '26', '22', '5', '6', '10', '31',
+                         '37', '9', '39', '27', '18', '35', '23', '48', '36', '50',
+                         '44', '49', '28'],
+    'promo2since_year': ['2010', '2011', '2012', '2009', '2014', '2015', '2013'],
+    'year': ['2015', '2014', '2013']
 }
 
 # a dictionary of categorical features with many values (sparse features)
@@ -132,6 +146,5 @@ SERVING_COLUMNS = HEADER.copy()
 SERVING_COLUMNS.remove(TARGET_NAME)
 
 # list of the default values of all the columns of the serving data, to help decoding the data types of the columns
-SERVING_DEFAULTS = [[0], [0], [0], [0], [0],
-                    [0], [''], [0], [''], [''],
-                    [''], [0], [0], [0.0]]
+SERVING_DEFAULTS = HEADER_DEFAULTS.copy()
+SERVING_DEFAULTS.pop(-1)

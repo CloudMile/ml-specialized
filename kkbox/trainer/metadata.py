@@ -46,10 +46,8 @@ TASK_TYPE = 'custom'
 #     'State': 'state'
 # }
 
-MEMBER_FEATURES = [
-    # 'msno',
-    'city', 'gender', 'registered_via',
-    'registration_init_time', 'expiration_date', 'msno_age_catg', 'msno_age_num', 'msno_tenure',
+MSNO_EXTRA_COLS = [
+    'msno_age_catg', 'msno_age_num', 'msno_tenure',
     'msno_pos_query_hist', 'msno_pos_query_count',
     'msno_neg_query_hist', 'msno_neg_query_count',
     'msno_artist_name_hist', 'msno_artist_name_count', 'msno_artist_name_mean',
@@ -61,9 +59,14 @@ MEMBER_FEATURES = [
     'msno_source_system_tab_hist', 'msno_source_system_tab_count',
     'msno_source_type_hist', 'msno_source_type_count'
 ]
-SONG_FEATURES = [
-    'song_id',
-    'genre_ids', 'artist_name', 'composer', 'lyricist', 'language',
+
+MEMBER_FEATURES = [
+    # 'msno',
+    'city', 'gender', 'registered_via',
+    'registration_init_time', 'expiration_date',
+] + MSNO_EXTRA_COLS
+
+SONG_EXTRA_COLS = [
     'song_cc', 'song_xxx', 'song_yy', 'song_length', 'song_pplrty', 'song_clicks',
     'song_artist_name_len', 'song_composer_len', 'song_lyricist_len', 'song_genre_ids_len',
     'song_city_hist', 'song_city_count', 'song_city_mean',
@@ -74,6 +77,12 @@ SONG_FEATURES = [
     'song_source_system_tab_hist', 'song_source_system_tab_count',
     'song_source_type_hist', 'song_source_type_count'
 ]
+
+SONG_FEATURES = [
+    'song_id',
+    'genre_ids', 'artist_name', 'composer', 'lyricist', 'language',
+] + SONG_EXTRA_COLS
+
 CONTEXT_FEATURES = ['source_system_tab', 'source_screen_name', 'source_type']
 TARGET_NAME = ['target']
 HEADER = MEMBER_FEATURES + SONG_FEATURES + CONTEXT_FEATURES + TARGET_NAME
@@ -150,6 +159,9 @@ EMB_COLS = {
     'song_cc': 3, 'song_xxx': 8, 'source_system_tab': 3, 'source_screen_name': 3, 'source_type': 3,
     # 'song_query': 16,
 }
+
+
+
 
 # target feature name (response or class variable)
 TARGET_NAME = 'target'

@@ -93,10 +93,6 @@ def write_pickle(path, obj):
 #     # label_ary.append(tuple(weights.index))
 #     # weight_ary.append(tuple(weights.values))
 
-def sep_fn(e):
-    """"""
-    return e
-
 from sklearn.base import BaseEstimator, TransformerMixin
 class BaseMapper(BaseEstimator, TransformerMixin):
     def init_check(self):
@@ -381,38 +377,3 @@ class NumericMapper(BaseMapper):
     def inverse_transform(self, y):
         y = np.array(y)[:, np.newaxis]
         return self.scaler.inverse_transform(y).reshape([-1])
-
-def transform(y, mapper:BaseMapper, is_multi=False, sep=None):
-    """"""
-    s = datetime.now()
-    def split(inp):
-        if callable(sep):
-            return inp.map(sep, na_action='ignore')
-        else:
-            return inp.str.split(f'\s*{re.escape(sep)}\s*')
-
-    y = pd.Series(y)
-    ret = None
-    if isinstance(mapper, NumericMapper):
-        ret = mapper.transform(y)
-    else:
-        # Transform to string splitted by comma,
-        if is_multi:
-            y = split(y)
-            lens = y.map(lambda ary: len(ary) if type(ary) in (list, tuple) else 1)
-            indices = np.cumsum(lens)
-
-            concat = []
-            y.map(lambda ary: concat.extend(ary) if type(ary) in (list, tuple) else
-                              concat.append(None))
-            y = pd.Series(concat).map(mapper.enc_, na_action='ignore')\
-                                 .fillna(0).astype(int).values
-            ret = pd.Series(np.split(y, indices)[:-1]).map(tuple).values
-
-            # y = pd.Series(concat).map(mapper.enc_, na_action='ignore')\
-            #                      .fillna(0).map(lambda e: str(int(e))).values
-            # ret = pd.Series(np.split(y, indices)[:-1]).map(','.join).values
-        else:
-            ret = y.map(mapper.enc_, na_action='ignore').fillna(0).astype(int).values
-    print(f'transform take time {datetime.now() - s}')
-    return ret

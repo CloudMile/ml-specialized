@@ -32,20 +32,21 @@ class Ctrl(object):
         :param p:
         :return:
         """
-        self.input.clean()
-        data = self.input.prepare(p.train_data, dump=True, is_train=True)
-        data = self.input.fit(data).transform(data, is_train=True)
+        self.input.clean(p.fpath, is_serving=False)
+        data = self.input.prepare(p.fpath, is_serving=False)
+        data = self.input.fit(data).transform(data, is_serving=False)
         self.input.split(data)
         return self
 
     def transform(self, p):
-        """Transform future input data
+        """Transform serving input data
 
         :param p: config params
         :return:
         """
-        data = self.input.prepare(p.fpath, is_train=False)
-        data = self.input.transform(data, is_train=False)
+        data = self.input.clean(p.fpath, is_serving=True)
+        data = self.input.prepare(data, is_serving=True)
+        data = self.input.transform(data, is_serving=True)
         return data
 
     def train(self, p):

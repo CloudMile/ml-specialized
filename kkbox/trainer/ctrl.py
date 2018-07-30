@@ -25,16 +25,17 @@ class Ctrl(object):
 
     def prepare(self, p):
         """
-        1. Prepare data: add, merge, drop columns ...
-        2. fit (if in training stage)
-        3. transform
-        4. Split input data to train, valid
+
         :param p:
         :return:
         """
-        data = self.input.prepare(p.train_data, dump=True, is_train=True)
-        data = self.input.fit(data).transform(data, is_train=True)
+        data = self.input.clean(p.fpath, is_serving=False)
         self.input.split(data)
+        del data
+
+        self.input.prepare(f'{self.p.cleaned_path}/tr.pkl', is_serving=True)
+        self.input.fit(f'{self.p.prepared_path}/tr.pkl')
+        self.input.transform(data, is_serving=True)
         return self
 
     def transform(self, p):
@@ -43,8 +44,9 @@ class Ctrl(object):
         :param p: config params
         :return:
         """
-        data = self.input.prepare(p.fpath, is_train=False)
-        data = self.input.transform(data, is_train=False)
+        data = self.input.clean(p.fpath, is_serving=True)
+        data = self.input.prepare(data, is_serving=True)
+        data = self.input.transform(data, is_serving=True)
         return data
 
     def train(self, p):

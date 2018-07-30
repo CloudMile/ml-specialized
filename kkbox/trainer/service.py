@@ -41,6 +41,7 @@ class Service(object):
 
         model = m.Model(model_dir=self.p.model_dir) if model_name == 'dnn' else \
                 m.NeuMFModel(model_dir=self.p.model_dir)
+        self.logger.info(f'Use model {model_name}: {model}')
         self.logger.info(f"Model Directory: {run_config.model_dir}")
 
         exporter = m.BestScoreExporter(

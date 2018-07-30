@@ -27,30 +27,30 @@ class Config(object):
     test_files = f'{transformed_path}/te.pkl'
 
     # Data prepare relevant parameter
-    valid_size = 0.2
-    model_dir = f'{model_path}/kkbox_neumf_adam_dropout_max_norm'
+    valid_size = 0.1
+    model_dir = f'{model_path}/kkbox_neumf_adam_max_norm'
     # Dir name in {model_dir}/export
     export_name = 'estimator'
 
     # Hyper parameter
     keep_checkpoint_max = 5
     log_step_count_steps = 100
-    train_steps = 3874 * 3
-    valid_steps = 977
+    train_steps = 4358 * 1
+    valid_steps = 492
     batch_size = 1000
     # Number of loops for dataset
     num_epochs = 1
     save_checkpoints_steps = 500
-    eval_every_secs = 1200
+    eval_every_secs = 1000
     # Recommend to assign to same as train_steps, for tf.train.cosine_decay,
     # and tune the alpha hyper param to control the lr won't down to zero.
     cos_decay_steps = train_steps
     initial_learning_rate = 0.001
     mlp_layers = [512, 128, 64]
     factor_layers = [32, 16]
-    drop_rate = 0.4
+    drop_rate = 0
     # momentum = 0.99
-    reg_scale = 0.0001
+    reg_scale = 0
 
     # Serving relevant
     serving_format = 'json' # [json]

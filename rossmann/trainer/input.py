@@ -53,6 +53,7 @@ class Input(object):
         if isinstance(data, str):
             data = pd.read_csv(data, dtype=dtype)
 
+        store_states = pd.read_csv(f'{self.p.prepared_path}/store_state.csv', dtype=dtype)
         # Train, eval
         if not is_serving:
             store = pd.read_csv(f'{self.p.cleaned_path}/store.csv', dtype=dtype)
@@ -84,10 +85,10 @@ class Input(object):
             store['promo2since_year'].fillna('', inplace=True)
             store['promo2since_week'].fillna('', inplace=True)
 
+            # Merge store_state to store and persistent
             self.logger.info(f'Persisten store to {self.p.prepared_path}/store.csv')
+            store = store.merge(store_states, on='store', how='left')
             store.to_csv(f'{self.p.prepared_path}/store.csv', index=False)
-            # Simple copy store_state.csv to prepare dir
-            shutil.copy2(f'{self.p.cleaned_path}/store_state.csv', f'{self.p.prepared_path}')
         else:
             store = pd.read_csv(f'{self.p.prepared_path}/store.csv', dtype=dtype)
 
@@ -97,8 +98,7 @@ class Input(object):
         data['month'] = dt.dt.month
         data['day'] = dt.dt.day
 
-        store_states = pd.read_csv(f'{self.p.prepared_path}/store_state.csv', dtype=dtype)
-        merge = data.merge(store, how='left', on='store').merge(store_states, how='left', on='store')
+        merge = data.merge(store, how='left', on='store') # .merge(store_states, how='left', on='store')
 
         # Calculate real promo2 happened timing, promo2 have periodicity per year,
         # e.g: if PromoInterval = 'Jan,Apr,Jul,Oct', means month in 1, 4, 7, 10 in every year will
@@ -170,6 +170,7 @@ class Input(object):
         if not is_serving:
             self.logger.info(f'Do np.log(data.{metadata.TARGET_NAME}) !')
             data[metadata.TARGET_NAME] = np.log1p(data[metadata.TARGET_NAME])
+            shutil.copy2(f'{self.p.prepared_path}/store.csv', f'{self.p.transformed_path}')
         # else:
         #     del dtype[metadata.TARGET_NAME]
         #     data['open'] = data.open.fillna(0)

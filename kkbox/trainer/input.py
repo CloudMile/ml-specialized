@@ -346,7 +346,7 @@ class Input(object):
             mapper_dict[numeric] = utils.NumericMapper(scaler=preprocessing.StandardScaler()).fit(data[numeric])
 
         # Persistent the statistic
-        utils.write_pickle('./data/processed/fitted/stats.pkl', mapper_dict)
+        utils.write_pickle(f'{self.p.fitted_path}/stats.pkl', mapper_dict)
 
         self.logger.info(f'Fit take time {datetime.now() - s}')
         return self

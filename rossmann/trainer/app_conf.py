@@ -43,7 +43,7 @@ class Config(object):
     valid_steps = 989
     batch_size = 256
     num_epochs = 10
-    eval_every_secs = 600
+    # eval_every_secs = 600
     encode_one_hot = False
     as_wide_columns = False
 

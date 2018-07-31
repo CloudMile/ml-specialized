@@ -103,14 +103,6 @@ class Service(object):
         #     estimator.evaluate(valid_fn, steps=10)
         return self
 
-    def read_transformed(self, fpath):
-        """Read transformed data for model prediction
-
-        :param fpath:
-        :return:
-        """
-        return pd.read_csv(fpath)
-
     def find_ml(self):
         """GCP ML service
 

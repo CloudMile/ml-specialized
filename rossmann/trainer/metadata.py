@@ -21,15 +21,17 @@
 # task type can be either 'classification' or 'regression', based on the target feature in the dataset
 TASK_TYPE = 'custom'
 
-RAW_HEADER = ['Store', 'DayOfWeek', 'Date', 'Sales', 'Customers',
-              'Open', 'Promo', 'StateHoliday', 'SchoolHoliday', 'StoreType',
-              'Assortment', 'CompetitionDistance', 'CompetitionOpenSinceMonth', 'CompetitionOpenSinceYear', 'Promo2',
-              'Promo2SinceWeek', 'Promo2SinceYear', 'PromoInterval', 'State']
+RAW_HEADER = ['Store', 'DayOfWeek', 'Date', 'Sales', 'Customers', 'Open', 'Promo',
+       'StateHoliday', 'SchoolHoliday', 'StoreType', 'Assortment',
+       'CompetitionDistance', 'CompetitionOpenSinceMonth',
+       'CompetitionOpenSinceYear', 'Promo2', 'Promo2SinceWeek',
+       'Promo2SinceYear', 'PromoInterval', 'State']
 
-RAW_DTYPES = [str, str, str, int, int,
-              int, int, str, str, str,
-              str, float, str, str, int,
-              str, str, str, str]
+RAW_DTYPES = [str, str, str, float, float, str, str,
+              str, str, str, str,
+              float, str,
+              str, str, str,
+              str, str, str]
 
 HEADER_MAPPING = {
     # train, valid, test
@@ -67,9 +69,9 @@ HEADER = ['store', 'day_of_week', 'open', 'promo2',
           'sales']
 
 # list of the default values of all the columns of the input data, to help decoding the data types of the columns
-HEADER_DEFAULTS = [[0], [0], [0], [0],
-                   [0], [''], [0], [''], [''],
-                   [''], [''], [0], [0], [0.0],
+HEADER_DEFAULTS = [[0], [''], [''], [''],
+                   [''], [''], [''], [''], [''],
+                   [''], [''], [''], [''], [0.0],
                    [0.0],
                    [0.0], [''], [''],
                    [0.0], [''], [''],
@@ -82,16 +84,16 @@ INPUT_NUMERIC_FEATURE_NAMES = ['sales_mean']
 # as part of reading data
 CONSTRUCTED_NUMERIC_FEATURE_NAMES = ['competition_open_since', 'promo2since', 'competition_distance']
 
+
+INPUT_NUMERIC_FEATURE_NAMES = INPUT_NUMERIC_FEATURE_NAMES + CONSTRUCTED_NUMERIC_FEATURE_NAMES
+
 # a dictionary of feature names with int values, but to be treated as categorical features.
 # In the dictionary, the key is the feature name, and the value is the num_buckets (count of distinct values)
 INPUT_CATEGORICAL_FEATURE_NAMES_WITH_IDENTITY = {
-    'open': 2,
-    'promo': 2,
-    'promo2': 2,
-    'school_holiday': 2,
-    'day': 32,
-    'month': 13,
-    'day_of_week': 8,
+    # 'open': 2,
+    # 'promo': 2,
+    # 'promo2': 2,
+    # 'school_holiday': 2
 }
 
 # categorical features with identity constructed, if any, in process_features function in input.py module,
@@ -102,7 +104,7 @@ CONSTRUCTED_CATEGORICAL_FEATURE_NAMES_WITH_IDENTITY = {}
 #  In the dictionary, the key is the feature name, and the value is the list of feature vocabulary
 INPUT_CATEGORICAL_FEATURE_NAMES_WITH_VOCABULARY = {
     'state': ['HE', 'HH', 'SH', 'NW', 'BE', 'BY', 'SN', 'RP', 'TH', 'HB,NI', 'BW', 'ST'],
-    'state_holiday': ['a', '0', 'b', 'c'],
+    'state_holiday': ['a', 'b', 'c', '0'],
     'assortment': ['a', 'b', 'c', '0'],
     'store_type': ['a', 'b', 'c', 'd'],
     'competition_open_since_month': ['9', '11', '12', '4', '10', '8', '3', '6', '5', '1', '2', '7'],
@@ -113,15 +115,23 @@ INPUT_CATEGORICAL_FEATURE_NAMES_WITH_VOCABULARY = {
                          '37', '9', '39', '27', '18', '35', '23', '48', '36', '50',
                          '44', '49', '28'],
     'promo2since_year': ['2010', '2011', '2012', '2009', '2014', '2015', '2013'],
-    'year': ['2015', '2014', '2013']
+    'year': ['2015', '2014', '2013'],
+    'month': ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'],
+    'day': ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10',
+            '11', '12', '13', '14', '15', '16', '17', '18', '19', '20',
+            '21', '22', '23', '24', '25', '26', '27', '28', '29', '30',
+            '31'],
+    'day_of_week': ['1', '2', '3', '4', '5', '6', '7'],
+    'open': ['0', '1'],
+    'promo': ['0', '1'],
+    'promo2': ['0', '1'],
+    'school_holiday': ['0', '1']
 }
 
 # a dictionary of categorical features with many values (sparse features)
 # In the dictionary, the key is the feature name, and the value is the bucket size + dtype
 INPUT_CATEGORICAL_FEATURE_NAMES_WITH_HASH_BUCKET = {
-    # 'date': 10000,
-    'store': {'bucket_size': 2000, 'dtype': 'int32'},
-    # 'year': {'bucket_size': 1000, 'dtype': 'int32'}
+    'store': {'bucket_size': 2000, 'dtype': 'int32'}
 }
 
 # list of all the categorical feature names

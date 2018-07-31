@@ -465,10 +465,12 @@ class Input(object):
             tr = self.train_merge(tr, members, songs)
             self.logger.info('Merge valid data')
             vl = self.train_merge(vl, members, songs)
+
             self.logger.info('Persistent train valid data, maybe take a while ...')
             s_ = datetime.now()
             tr.to_pickle(f'{self.p.transformed_path}/tr.pkl')
             vl.to_pickle(f'{self.p.transformed_path}/vl.pkl')
+
             self.logger.info(f'Persistent train, valid take time {datetime.now() - s_}')
             ret = self
 

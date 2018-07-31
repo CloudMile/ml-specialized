@@ -37,9 +37,11 @@ class Config(object):
     export_name = 'estimator'
 
     # Hyper parameter
+    mlp_layers = [128, 64, 32]
+    learning_rate = 0.005
     keep_checkpoint_max = 3
     log_step_count_steps = 500
-    train_steps = 2308 * 3
+    train_steps = 2308 * 5
     valid_steps = 989
     batch_size = 256
     num_epochs = 10

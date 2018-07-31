@@ -11,7 +11,7 @@ class Ctrl(object):
 
     def __init__(self):
         self.service:service.Service = service.Service.instance
-        self.p:app_conf.Config = app_conf.instance
+        self.conf:app_conf.Config = app_conf.instance
         self.feature:m.Feature = m.Feature()
         self.input:input.Input = input.Input.instance
 
@@ -19,7 +19,7 @@ class Ctrl(object):
         from google.auth import environment_vars
 
         CREDENTIAL_NAME = environment_vars.CREDENTIALS
-        os.environ[CREDENTIAL_NAME] = self.p.api_key_path
+        os.environ[CREDENTIAL_NAME] = self.conf.api_key_path
         return self
 
     def prepare(self, p):
@@ -32,8 +32,8 @@ class Ctrl(object):
         :param p:
         :return:
         """
-        self.input.clean(p.fpath, is_serving=False)
-        data = self.input.prepare(p.fpath, is_serving=False)
+        data = self.input.clean(p.fpath, is_serving=False)
+        data = self.input.prepare(data, is_serving=False)
         data = self.input.fit(data).transform(data, is_serving=False)
         self.input.split(data)
         return self
@@ -49,8 +49,8 @@ class Ctrl(object):
         data = self.input.transform(data, is_serving=True)
         return data
 
-    def train(self, p):
-        self.service.train()
+    def train(self, p, reset=True):
+        self.service.train(reset=reset)
         return self
 
     def upload_model(self, p):
@@ -61,7 +61,7 @@ class Ctrl(object):
         """
         from google.cloud import storage
 
-        utils.find_latest_expdir(self.p)
+        utils.find_latest_expdir(self.conf)
         bucket = storage.Client().get_bucket(p.bucket_name)
         # clean model dir
         for blob in bucket.list_blobs(prefix=p.prefix):
@@ -94,7 +94,7 @@ class Ctrl(object):
         """
         from tensorflow.contrib import predictor
 
-        export_dir = utils.find_latest_expdir(self.p)
+        export_dir = utils.find_latest_expdir(self.conf)
         predict_fn = predictor.from_saved_model(export_dir, signature_def_key='predict')
 
         if p.is_src_file:
@@ -137,7 +137,8 @@ class Ctrl(object):
             datasource = self.service.read_transformed(p.datasource)
         else:
             datasource = p.datasource
-        export_dir = utils.find_latest_expdir(self.p)
+        export_dir = utils.find_latest_expdir(self.conf)
+        self.logger.info(f'Found export dir: {export_dir}')
 
         tf.reset_default_graph()
         with tf.Session(graph=tf.Graph()) as sess:
@@ -157,11 +158,11 @@ class Ctrl(object):
 
     # TODO hack: inspect data
     def inspect(self, key):
-        model = m.Model(model_dir=self.p.model_dir)
+        model = m.Model(model_dir=self.conf.model_dir)
         train_fn = self.input.generate_input_fn(
-            file_names_pattern=self.p.train_files,
+            file_names_pattern=self.conf.train_files,
             mode=tf.estimator.ModeKeys.TRAIN,
-            num_epochs=self.p.num_epochs,
+            num_epochs=self.conf.num_epochs,
             batch_size=5000,
             shuffle=False
         )
@@ -178,15 +179,63 @@ class Ctrl(object):
                 dense_data, feat_data[key], feat_data, target, dense_all])
         return encoded, origin, feat_data, target_, all_
 
+    # TODO hack:
+    def get_from_dataset(self, p):
+        model = m.Model(model_dir=self.conf.model_dir)
+        feat_spec = model.feature.create_feature_columns()
+        train_fn = self.input.generate_input_fn(
+            file_names_pattern=self.conf.train_files,
+            mode=tf.estimator.ModeKeys.TRAIN,
+            num_epochs=1,
+            batch_size=10000,
+            shuffle=False
+        )
+        valid_fn = self.input.generate_input_fn(
+            file_names_pattern=self.conf.valid_files,
+            mode=tf.estimator.ModeKeys.EVAL,
+            num_epochs=1,
+            batch_size=10000,
+            shuffle=False
+        )
+
+        def from_dataset(data_fn):
+            ret = []
+            x, y = data_fn()
+            x = tf.feature_column.input_layer(x, list(feat_spec.values()))
+            with tf.Session() as sess:
+                tf.global_variables_initializer().run()
+                sess.run(tf.tables_initializer())
+                while True:
+                    try:
+                        x_, y_ = sess.run([x, y])
+                        ret.append(np.c_[x_, y_])
+                    except tf.errors.OutOfRangeError as e: break
+            return np.concatenate(ret, 0)
+        tr = from_dataset(train_fn)
+        vl = from_dataset(valid_fn)
+
+        tr_label, vl_label = tr[:, -1], vl[:, -1]
+        return tr[:, :-1], tr_label, vl[:, :-1], vl_label
+
     # TODO any test !
     def test(self):
-        # serving_inp = self.input.csv_serving_fn()
-        # return serving_inp
-
+        model = m.Model(model_dir=self.conf.model_dir)
         with tf.Graph().as_default():
-            self.input.generate_input_fn(self.p.valid_files)()
+            train_fn = self.input.generate_input_fn(
+                file_names_pattern=self.conf.train_files,
+                mode=tf.estimator.ModeKeys.TRAIN,
+                num_epochs=self.conf.num_epochs,
+                batch_size=5000,
+                shuffle=False
+            )
+
+            feat_data, target = train_fn()
+            feat_spec = model.feature.create_feature_columns()
+            dense_data = tf.feature_column.input_layer({'year': tf.constant([['2019'], ['2015']])}, feat_spec['year'])
             with tf.Session() as sess:
-                pass
+                tf.global_variables_initializer().run()
+                sess.run(tf.tables_initializer())
+                return sess.run(dense_data)
 
 Ctrl.instance = Ctrl()
 

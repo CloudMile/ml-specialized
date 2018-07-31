@@ -27,13 +27,12 @@ class Input(object):
         ret = None
         # Handle missing value and change column name style to PEP8 and resort columns order
         if not is_serving:
-            dtypes = dict(zip(metadata.RAW_HEADER, metadata.RAW_DTYPES))
-            store = pd.read_csv(self.p.store_data, dtype=dtypes)
+            store = pd.read_csv(self.p.store_data)
             store['CompetitionDistance'].fillna(store.CompetitionDistance.median(), inplace=True)
             store = store.rename(index=str, columns=metadata.HEADER_MAPPING)
             store.to_csv(f'{self.p.cleaned_path}/store.csv', index=False)
 
-            store_state = pd.read_csv(self.p.store_state, dtype=dtypes)
+            store_state = pd.read_csv(self.p.store_state)
             store_state = store_state.rename(index=str, columns=metadata.HEADER_MAPPING)
             store_state.to_csv(f'{self.p.cleaned_path}/store_state.csv', index=False)
 
@@ -41,6 +40,12 @@ class Input(object):
             ret.to_csv(f'{self.p.cleaned_path}/tr.csv', index=False)
         else:
             ret = data.rename(index=str, columns=metadata.HEADER_MAPPING)
+            with open(self.p.feature_stats_file) as fp:
+                stats = json.load(fp)
+            ret['competition_distance'].fillna(stats['competition_distance']['median'], inplace=True)
+            # defaults = dict(zip(metadata.SERVING_COLUMNS, metadata.SERVING_DEFAULTS))
+            # for col, dft in defaults.items():
+            #     ret[col].fillna(dft, inplace=True)
 
         self.logger.info(f'Clean take time {datetime.now() - s}')
         return ret
@@ -49,21 +54,18 @@ class Input(object):
         self.logger.info(f'Prepare start, is_serving: {is_serving}')
         s = datetime.now()
 
-        dtype = self.get_processed_dtype()
         if isinstance(data, str):
-            data = pd.read_csv(data, dtype=dtype)
+            data = pd.read_csv(data)
 
-        store_states = pd.read_csv(f'{self.p.prepared_path}/store_state.csv', dtype=dtype)
         # Train, eval
         if not is_serving:
-            store = pd.read_csv(f'{self.p.cleaned_path}/store.csv', dtype=dtype)
+            store = pd.read_csv(f'{self.p.cleaned_path}/store.csv')
             # CompetitionOpenSinceMonth, CompetitionOpenSinceYear need to be transform to days count from 1970/01/01
             def map_fn(e):
                 y, m = e
                 if pd.isna(y) or pd.isna(m): return np.nan
-                # y, m = int(float(y)), int(float(m))
+                y, m = int(y), int(m)
                 return f'{y}-{m}-1'
-
             since_dt = pd.Series(list(zip(store.competition_open_since_year, store.competition_open_since_month)))\
                          .map(map_fn, na_action='ignore')
             store['competition_open_since'] = (pd.to_datetime(since_dt) - datetime(1970, 1, 1)).dt.days
@@ -76,7 +78,7 @@ class Input(object):
                 y, week = e
                 if pd.isna(y) or pd.isna(week):
                     return np.nan
-                return datetime.strptime(f'{y}', '%Y')
+                return datetime.strptime(f'{int(y)}', '%Y')
             # (datetime.strptime(f'{y}', '%Y') + timedelta(weeks=int(week)) - datetime(1970, 1, 1)).days
 
             promo2_dt = pd.Series(list(zip(store.promo2since_year, store.promo2since_week))).map(promo2_fn)
@@ -87,17 +89,17 @@ class Input(object):
 
             # Merge store_state to store and persistent
             self.logger.info(f'Persisten store to {self.p.prepared_path}/store.csv')
+            store_states = pd.read_csv(f'{self.p.cleaned_path}/store_state.csv')
             store = store.merge(store_states, on='store', how='left')
             store.to_csv(f'{self.p.prepared_path}/store.csv', index=False)
         else:
-            store = pd.read_csv(f'{self.p.prepared_path}/store.csv', dtype=dtype)
+            store = pd.read_csv(f'{self.p.prepared_path}/store.csv')
 
         # Construct year, month, day columns, maybe on specific day or period will has some trends.
         dt = pd.to_datetime(data['date'])
         data['year'] = dt.dt.year
         data['month'] = dt.dt.month
         data['day'] = dt.dt.day
-
         merge = data.merge(store, how='left', on='store') # .merge(store_states, how='left', on='store')
 
         # Calculate real promo2 happened timing, promo2 have periodicity per year,
@@ -113,7 +115,7 @@ class Input(object):
             merge['sales_mean'] = sales_mean.reindex(merge.store).values
 
             # Add date for split train valid
-            merge = merge.query('open == 1')[['date'] + metadata.HEADER]
+            merge = merge.query('open == 1 and sales > 0')[['date'] + metadata.HEADER]
             merge.to_csv(f'{self.p.prepared_path}/tr.csv', index=False)
         else:
             with open(self.p.feature_stats_file, 'r') as fp:
@@ -139,10 +141,9 @@ class Input(object):
         stats = defaultdict(defaultdict)
         numeric_feature_names = metadata.INPUT_NUMERIC_FEATURE_NAMES + metadata.CONSTRUCTED_NUMERIC_FEATURE_NAMES
         for name, col in data[numeric_feature_names].iteritems():
-            # scaler = preprocessing.StandardScaler()
-            # scaler.fit(col.astype(float)[:, np.newaxis])
-            self.logger.info(f'{name}.mean: {col.mean()}, {name}.stdv: {col.std()}')
-            stats[name] = {'mean': col.mean(), 'stdv': col.std()}
+            self.logger.info(f'{name}.mean: {col.mean()}, {name}.stdv: {col.std()}, '
+                             f'{name}.median: {col.median()}')
+            stats[name] = {'mean': col.mean(), 'stdv': col.std(), 'median': col.median()}
 
         # Dump feature stats
         sales_mean = data.groupby('store').sales.mean()
@@ -163,9 +164,8 @@ class Input(object):
         self.logger.info(f'Prepare start, is_serving: {is_serving}')
         s = datetime.now()
 
-        dtype = self.get_processed_dtype()
         if isinstance(data, str):
-            data = pd.read_csv(data, dtype=dtype)
+            data = pd.read_csv(data)
 
         if not is_serving:
             self.logger.info(f'Do np.log(data.{metadata.TARGET_NAME}) !')
@@ -176,7 +176,7 @@ class Input(object):
         #     data['open'] = data.open.fillna(0)
 
         self.logger.info(f'Transform take time {datetime.now() - s}')
-        return data.astype(dtype=dtype, errors='ignore')
+        return data # .astype(dtype=dtype, errors='ignore')
 
     def split(self, data):
         """Merged training data
@@ -186,9 +186,8 @@ class Input(object):
         """
         self.logger.info(f'Split start')
         s = datetime.now()
-        dtype = self.get_processed_dtype()
         if isinstance(data, str):
-            data = pd.read_csv(data, dtype=dtype)
+            data = pd.read_csv(data)
 
         tr, vl = [], []
         for st, df in data.groupby('store'):
@@ -235,11 +234,43 @@ class Input(object):
         base[valid_cond] = df.apply(lambda row: row.month in row.interval, 1).values
         return base.astype(int)
 
-    def get_processed_dtype(self):
+    def get_processed_dtype(self, is_serving=False):
+        header = metadata.HEADER if not is_serving else metadata.SERVING_COLUMNS
+        columns = metadata.HEADER_DEFAULTS if not is_serving else metadata.SERVING_DEFAULTS
         return dict(zip(
-            metadata.HEADER,
-            [type(e[0]) for e in metadata.HEADER_DEFAULTS]
+            header,
+            [type(e[0]) for e in columns]
         ))
+
+    def load_feature_stats(self):
+        """
+        Load numeric column pre-computed statistics (mean, stdv, min, max, etc.)
+        in order to be used for scaling/stretching numeric columns.
+
+        In practice, the statistics of large datasets are computed prior to model training,
+        using dataflow (beam), dataproc (spark), BigQuery, etc.
+
+        The stats are then saved to gcs location. The location is passed to package
+        in the --feature-stats-file argument. However, it can be a local path as well.
+
+        Returns:
+            json object with the following schema: stats['feature_name']['state_name']
+        """
+
+        feature_stats = None
+        p = app_conf.instance
+        try:
+            if p.feature_stats_file is not None and tf.gfile.Exists(p.feature_stats_file):
+                with tf.gfile.Open(p.feature_stats_file) as file:
+                    content = file.read()
+                feature_stats = json.loads(content)
+                self.logger.info("Feature stats were successfully loaded from local file...")
+            else:
+                self.logger.warn("Feature stats file not found. numerical columns will not be normalised...")
+        except:
+            self.logger.warn("Couldn't load feature stats. numerical columns will not be normalised...")
+
+        return feature_stats
 
     def process_features(self, features):
         """ Use to implement custom feature engineering logic, e.g. polynomial expansion
@@ -369,7 +400,7 @@ class Input(object):
             defaults = metadata.HEADER_DEFAULTS
         # tf.expand_dims(csv_row, -1)
         columns = tf.decode_csv(tf.expand_dims(csv_row, -1), record_defaults=defaults)
-        print(f'columns: {columns}')
+        # print(f'columns: {columns}')
         features = OrderedDict(zip(column_names, columns))
 
         return features
@@ -454,15 +485,7 @@ class Input(object):
                              .prefetch(buffer_size)\
                              .repeat(num_epochs)
 
-            # return dataset, use make_one_shot_iterator will raise error
-            # `Cannot capture a stateful node by value ...`
             iterator = dataset.make_one_shot_iterator()
-            # iterator = dataset.make_initializable_iterator()
-
-            # if hooks is not None:
-            #     for hook in hooks:
-            #         hook.iterator_initializer_func = lambda sess: sess.run(iterator.initializer)
-
             features, target = iterator.get_next()
             return features, target
 
@@ -470,35 +493,7 @@ class Input(object):
 
 Input.instance = Input()
 
-def load_feature_stats():
-    """
-    Load numeric column pre-computed statistics (mean, stdv, min, max, etc.)
-    in order to be used for scaling/stretching numeric columns.
 
-    In practice, the statistics of large datasets are computed prior to model training,
-    using dataflow (beam), dataproc (spark), BigQuery, etc.
-
-    The stats are then saved to gcs location. The location is passed to package
-    in the --feature-stats-file argument. However, it can be a local path as well.
-
-    Returns:
-        json object with the following schema: stats['feature_name']['state_name']
-    """
-
-    feature_stats = None
-    p = app_conf.instance
-    try:
-        if p.feature_stats_file is not None and tf.gfile.Exists(p.feature_stats_file):
-            with tf.gfile.Open(p.feature_stats_file) as file:
-                content = file.read()
-            feature_stats = json.loads(content)
-            print("INFO:Feature stats were successfully loaded from local file...")
-        else:
-            print("WARN:Feature stats file not found. numerical columns will not be normalised...")
-    except:
-        print("WARN:Couldn't load feature stats. numerical columns will not be normalised...")
-
-    return feature_stats
 
 
 

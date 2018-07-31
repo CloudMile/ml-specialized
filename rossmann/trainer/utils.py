@@ -1,4 +1,4 @@
-import yaml, codecs, logging, os, pandas as pd
+import yaml, codecs, logging, os, pandas as pd, pickle
 from logging import config
 from datetime import datetime
 
@@ -61,3 +61,10 @@ def preview(fpath, heads=5):
     for chunk in pd.read_csv(fpath, chunksize=heads):
         return chunk
 
+def read_pickle(path):
+    with open(path, 'rb') as fp:
+        return pickle.load(fp)
+
+def write_pickle(path, obj):
+    with open(path, 'wb') as fp:
+        pickle.dump(obj, fp)

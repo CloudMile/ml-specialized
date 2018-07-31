@@ -35,7 +35,7 @@ class Ctrl(object):
 
         self.input.prepare(f'{self.p.cleaned_path}/tr.pkl', is_serving=True)
         self.input.fit(f'{self.p.prepared_path}/tr.pkl')
-        self.input.transform(data, is_serving=True)
+        self.input.transform(f'{self.p.prepared_path}/tr.pkl', is_serving=True)
         return self
 
     def transform(self, p):

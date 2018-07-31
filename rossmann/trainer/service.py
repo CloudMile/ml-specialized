@@ -15,19 +15,25 @@ class Service(object):
         self.p = app_conf.instance
         self.inp = input.Input.instance
 
-    def train(self):
+    def train(self, reset=True):
         """Use tf.estimator.DNNRegressor to train model,
         eval at every epoch end, and export only when best (smallest) loss value occurs,
 
         :return: Self object
         """
-        if tf.gfile.Exists(self.p.model_dir):
+        if reset and tf.gfile.Exists(self.p.model_dir):
             self.logger.info(f"Deleted job_dir {self.p.model_dir} to avoid re-use")
             shutil.rmtree(self.p.model_dir, ignore_errors=True)
             # tf.gfile.DeleteRecursively(self.p.model_dir)
+        os.makedirs(self.p.model_dir, exist_ok=True)
 
+        sess_config = tf.ConfigProto()
+        sess_config.gpu_options.allow_growth = True
+        # Turn on XLA JIT compilation
+        sess_config.graph_options.optimizer_options.global_jit_level = tf.OptimizerOptions.ON_1
         run_config = tf.estimator.RunConfig(
-            tf_random_seed=878787,
+            session_config=sess_config,
+            # tf_random_seed=878787,
             log_step_count_steps=self.p.log_step_count_steps,
             # save_checkpoints_steps=self.p.save_checkpoints_steps,
             # save_checkpoints_secs=HYPER_PARAMS.eval_every_secs,

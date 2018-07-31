@@ -7,6 +7,7 @@ from tensorflow.python.ops import math_ops
 from . import utils, app_conf, input, metadata
 
 class Model(object):
+    logger = utils.logger(__name__)
 
     def __init__(self, model_dir):
         """
@@ -21,20 +22,19 @@ class Model(object):
     def get_estimator(self, config:tf.estimator.RunConfig):
         feat_spec = list(self.feature.create_feature_columns().values())
         est = tf.estimator.DNNRegressor(
-            hidden_units=[1000, 500],
+            hidden_units=self.p.mlp_layers,
             feature_columns=feat_spec,
             model_dir=self.model_dir,
             label_dimension=1,
             weight_column=None,
-            # optimizer=tf.train.AdamOptimizer(),
+            optimizer=tf.train.AdamOptimizer(self.p.learning_rate),
             # optimizer='Adagrad',
-            optimizer=tf.train.GradientDescentOptimizer(learning_rate=0.0001),
-            activation_fn=tf.nn.relu,
+            # optimizer=tf.train.GradientDescentOptimizer(learning_rate=0.001),
+            activation_fn=tf.nn.selu,
             dropout=None,
             input_layer_partitioner=None,
             config=config
         )
-
         # Create directory for export, it will raise error if in GCS environment
         try:
             os.makedirs(f'{self.p.model_dir}/export/{self.p.export_name}', exist_ok=True)
@@ -58,7 +58,7 @@ class Model(object):
 
                 predictions, labels, weights = metrics_impl._remove_squeezable_dimensions(
                     predictions=predictions, labels=labels, weights=weights)
-                # The target has been take log1p, so do expm1 to target back
+                # The target has been take log1p, so take expm1 back
                 labels, predictions = math_ops.expm1(labels), math_ops.expm1(predictions)
                 mspe, update_op = metrics_impl.mean(
                     math_ops.square((labels - predictions) / labels), weights)
@@ -77,6 +77,55 @@ class Model(object):
         print(f"creating a regression model: {est}")
         return est
 
+# class BestScoreExporter(tf.estimator.Exporter):
+#     logger = utils.logger('BestScoreExporter')
+#
+#     def __init__(self,
+#                  name,
+#                  serving_input_receiver_fn,
+#                  assets_extra=None,
+#                  as_text=False):
+#         self._name = name
+#         self.serving_input_receiver_fn = serving_input_receiver_fn
+#         self.assets_extra = assets_extra
+#         self.as_text = as_text
+#         self.best = None
+#         self._exports_to_keep = 1
+#         self.export_result = None
+#         self.logger.info('BestScoreExporter init')
+#
+#     @property
+#     def name(self):
+#         return self._name
+#
+#     def export(self, estimator, export_path, checkpoint_path, eval_result,
+#              is_the_final_export):
+#
+#         self.logger.info(f'eval_result: {eval_result}')
+#         curloss = eval_result['loss']
+#         if self.best is None or self.best >= curloss:
+#             # Clean first, only keep the best weights
+#             self.logger.info(f'clean export_path: {export_path}')
+#             try:
+#                 shutil.rmtree(export_path)
+#             except Exception as e:
+#                 self.logger.warn(e)
+#
+#             os.makedirs(export_path, exist_ok=True)
+#
+#             self.best = curloss
+#             self.logger.info('nice eval loss: {}, export to pb'.format(curloss))
+#             self.export_result = estimator.export_savedmodel(
+#                 export_path,
+#                 self.serving_input_receiver_fn,
+#                 assets_extra=self.assets_extra,
+#                 as_text=self.as_text,
+#                 checkpoint_path=checkpoint_path)
+#         else:
+#             self.logger.info('bad eval loss: {}'.format(curloss))
+#
+#         return self.export_result
+
 class BestScoreExporter(tf.estimator.Exporter):
     logger = utils.logger('BestScoreExporter')
 
@@ -89,20 +138,32 @@ class BestScoreExporter(tf.estimator.Exporter):
         self.serving_input_receiver_fn = serving_input_receiver_fn
         self.assets_extra = assets_extra
         self.as_text = as_text
-        self.best = None
+        self.best = self.get_last_eval()
         self._exports_to_keep = 1
         self.export_result = None
-        self.logger.info('BestScoreExporter init')
+        self.logger.info(f'BestScoreExporter init, last best eval is {self.best}')
 
     @property
     def name(self):
         return self._name
 
+    def get_last_eval(self):
+        path = f'{app_conf.instance.model_dir}/best.eval'
+        if os.path.exists(path):
+            return utils.read_pickle(path)
+        else:
+            return None
+
+    def save_last_eval(self, best:float):
+        self.logger.info(f'Persistent best eval: {best}')
+        path = f'{app_conf.instance.model_dir}/best.eval'
+        utils.write_pickle(path, best)
+
     def export(self, estimator, export_path, checkpoint_path, eval_result,
              is_the_final_export):
 
         self.logger.info(f'eval_result: {eval_result}')
-        curloss = eval_result['loss']
+        curloss = eval_result['rmspe']
         if self.best is None or self.best >= curloss:
             # Clean first, only keep the best weights
             self.logger.info(f'clean export_path: {export_path}')
@@ -114,7 +175,9 @@ class BestScoreExporter(tf.estimator.Exporter):
             os.makedirs(export_path, exist_ok=True)
 
             self.best = curloss
-            self.logger.info('nice eval loss: {}, export to pb'.format(curloss))
+            self.save_last_eval(self.best)
+
+            self.logger.info(f'nice eval loss: {curloss}, export to pb')
             self.export_result = estimator.export_savedmodel(
                 export_path,
                 self.serving_input_receiver_fn,
@@ -122,7 +185,7 @@ class BestScoreExporter(tf.estimator.Exporter):
                 as_text=self.as_text,
                 checkpoint_path=checkpoint_path)
         else:
-            self.logger.info('bad eval loss: {}'.format(curloss))
+            self.logger.info(f'bad eval loss: {curloss}')
 
         return self.export_result
 
@@ -144,43 +207,33 @@ class Feature(object):
         Returns:
             {string: tf.feature_column}: extended feature_column(s) dictionary
         """
-        # size = np.prod([len(values) for values in metadata.INPUT_CATEGORICAL_FEATURE_NAMES_WITH_VOCABULARY.items()])
-
-        # interactions_feature = tf.feature_column.crossed_column(
-        #     keys=metadata.INPUT_CATEGORICAL_FEATURE_NAMES_WITH_VOCABULARY.keys(),
-        #     hash_bucket_size=10000
-        # )
-        #
-        # interactions_feature_embedded = tf.feature_column.embedding_column(interactions_feature,
-        #                                                                    dimension=task.HYPER_PARAMS.embedding_size)
-        #
-        # feature_columns['interactions_feature_embedded'] = interactions_feature_embedded
         dims = {
             # 'store_open': 16,
-            'day_of_week': 8,
+            # 'day_of_week': 3,
             # 'promo': 8,
-            'state_holiday': 8,
-            # 'school_holiday': 8,
-            'month': 8,
-            'day': 8,
-            'state': 8,
+            'state_holiday': 3,
+            'month': 3,
+            'day': 5,
+            'state': 3,
             'store': 16,
-            # 'year': 16,
-            'assortment': 8,
-            'store_type': 8,
-            'promo2since_week': 8,
-            'promo2since_year': 8,
+            'year': 3,
+            'assortment': 3,
+            'store_type': 3,
+            'competition_open_since_month': 3,
+            'competition_open_since_year': 3,
+            'promo2since_week': 3,
+            'promo2since_year': 3
         }
         for name in metadata.INPUT_CATEGORICAL_FEATURE_NAMES:
-            if name in ('promo', 'promo2', 'open', 'school_holiday'):
+            if name not in dims:
                 feature_columns[name] = tf.feature_column.indicator_column(
                     feature_columns[name]
                 )
             else:
                 feature_columns[name] = tf.feature_column.embedding_column(
-                    feature_columns[name],
-                    dims[name]
+                    feature_columns[name], dims[name]
                 )
+
 
         return feature_columns
 
@@ -203,7 +256,7 @@ class Feature(object):
             """
 
         # load the numeric feature stats (if exists)
-        feature_stats = input.load_feature_stats()
+        feature_stats = input.Input.instance.load_feature_stats()
 
         # all the numerical features including the input and constructed ones
         numeric_feature_names = set(metadata.INPUT_NUMERIC_FEATURE_NAMES + metadata.CONSTRUCTED_NUMERIC_FEATURE_NAMES)
@@ -274,65 +327,65 @@ class Feature(object):
         # add extended feature_column(s) before returning the complete feature_column dictionary
         return self.extend_feature_columns(feature_columns)
 
-    def get_deep_and_wide_columns(self, feature_columns):
-        """Creates deep and wide feature_column lists.
-
-        Given a list of feature_column(s), each feature_column is categorised as either:
-        1) dense, if the column is tf.feature_column._NumericColumn or feature_column._EmbeddingColumn,
-        2) categorical, if the column is tf.feature_column._VocabularyListCategoricalColumn or
-        tf.feature_column._BucketizedColumn, or
-        3) sparse, if the column is tf.feature_column._HashedCategoricalColumn or tf.feature_column._CrossedColumn.
-
-        If use_indicators=True, then categorical_columns are converted into indicator_columns, and used as dense features
-        in the deep part of the model. if use_wide_columns=True, then categorical_columns are used as sparse features
-        in the wide part of the model.
-
-        deep_columns = dense_columns + indicator_columns
-        wide_columns = categorical_columns + sparse_columns
-
-        Args:
-            feature_columns: [tf.feature_column] - A list of tf.feature_column objects.
-        Returns:
-            [tf.feature_column],[tf.feature_column]: deep and wide feature_column lists.
-        """
-        dense_columns = list(
-            filter(lambda column: isinstance(column, feature_column._NumericColumn) |
-                                  isinstance(column, feature_column._EmbeddingColumn),
-                   feature_columns)
-        )
-
-        categorical_columns = list(
-            filter(lambda column: isinstance(column, feature_column._VocabularyListCategoricalColumn) |
-                                  isinstance(column, feature_column._IdentityCategoricalColumn) |
-                                  isinstance(column, feature_column._BucketizedColumn),
-                   feature_columns)
-        )
-
-        sparse_columns = list(
-            filter(lambda column: isinstance(column, feature_column._HashedCategoricalColumn) |
-                                  isinstance(column, feature_column._CrossedColumn),
-                   feature_columns)
-        )
-
-        indicator_columns = []
-
-        encode_one_hot = self.p.encode_one_hot
-        as_wide_columns = self.p.as_wide_columns
-
-        # if encode_one_hot=True, then categorical_columns are converted into indicator_column(s),
-        # and used as dense features in the deep part of the model.
-        # if as_wide_columns=True, then categorical_columns are used as sparse features in the wide part of the model.
-
-        if encode_one_hot:
-            indicator_columns = list(
-                map(lambda column: tf.feature_column.indicator_column(column),
-                    categorical_columns)
-            )
-
-        deep_columns = dense_columns + indicator_columns
-        wide_columns = sparse_columns + (categorical_columns if as_wide_columns else [])
-
-        return deep_columns, wide_columns
+    # def get_deep_and_wide_columns(self, feature_columns):
+    #     """Creates deep and wide feature_column lists.
+    #
+    #     Given a list of feature_column(s), each feature_column is categorised as either:
+    #     1) dense, if the column is tf.feature_column._NumericColumn or feature_column._EmbeddingColumn,
+    #     2) categorical, if the column is tf.feature_column._VocabularyListCategoricalColumn or
+    #     tf.feature_column._BucketizedColumn, or
+    #     3) sparse, if the column is tf.feature_column._HashedCategoricalColumn or tf.feature_column._CrossedColumn.
+    #
+    #     If use_indicators=True, then categorical_columns are converted into indicator_columns, and used as dense features
+    #     in the deep part of the model. if use_wide_columns=True, then categorical_columns are used as sparse features
+    #     in the wide part of the model.
+    #
+    #     deep_columns = dense_columns + indicator_columns
+    #     wide_columns = categorical_columns + sparse_columns
+    #
+    #     Args:
+    #         feature_columns: [tf.feature_column] - A list of tf.feature_column objects.
+    #     Returns:
+    #         [tf.feature_column],[tf.feature_column]: deep and wide feature_column lists.
+    #     """
+    #     dense_columns = list(
+    #         filter(lambda column: isinstance(column, feature_column._NumericColumn) |
+    #                               isinstance(column, feature_column._EmbeddingColumn),
+    #                feature_columns)
+    #     )
+    #
+    #     categorical_columns = list(
+    #         filter(lambda column: isinstance(column, feature_column._VocabularyListCategoricalColumn) |
+    #                               isinstance(column, feature_column._IdentityCategoricalColumn) |
+    #                               isinstance(column, feature_column._BucketizedColumn),
+    #                feature_columns)
+    #     )
+    #
+    #     sparse_columns = list(
+    #         filter(lambda column: isinstance(column, feature_column._HashedCategoricalColumn) |
+    #                               isinstance(column, feature_column._CrossedColumn),
+    #                feature_columns)
+    #     )
+    #
+    #     indicator_columns = []
+    #
+    #     encode_one_hot = self.p.encode_one_hot
+    #     as_wide_columns = self.p.as_wide_columns
+    #
+    #     # if encode_one_hot=True, then categorical_columns are converted into indicator_column(s),
+    #     # and used as dense features in the deep part of the model.
+    #     # if as_wide_columns=True, then categorical_columns are used as sparse features in the wide part of the model.
+    #
+    #     if encode_one_hot:
+    #         indicator_columns = list(
+    #             map(lambda column: tf.feature_column.indicator_column(column),
+    #                 categorical_columns)
+    #         )
+    #
+    #     deep_columns = dense_columns + indicator_columns
+    #     wide_columns = sparse_columns + (categorical_columns if as_wide_columns else [])
+    #
+    #     return deep_columns, wide_columns
 
 Feature.instance = Feature()
 

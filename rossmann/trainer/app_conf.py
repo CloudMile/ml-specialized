@@ -32,7 +32,7 @@ class Config(object):
 
     # Data prepare relevant parameter
     valid_size = 0.3
-    model_dir = f'{model_path}/dnn_regressor'
+    model_dir = f'{model_path}/dnn_regressor_dropout'
     # Dir name in {model_dir}/export
     export_name = 'estimator'
 
@@ -41,7 +41,7 @@ class Config(object):
     learning_rate = 0.005
     keep_checkpoint_max = 3
     log_step_count_steps = 500
-    train_steps = 2308 * 5
+    train_steps = 2308 * 8
     valid_steps = 989
     batch_size = 256
     num_epochs = 10

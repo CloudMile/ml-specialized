@@ -31,7 +31,7 @@ class Model(object):
             # optimizer='Adagrad',
             # optimizer=tf.train.GradientDescentOptimizer(learning_rate=0.001),
             activation_fn=tf.nn.selu,
-            dropout=None,
+            dropout=0.3,
             input_layer_partitioner=None,
             config=config
         )
@@ -327,65 +327,65 @@ class Feature(object):
         # add extended feature_column(s) before returning the complete feature_column dictionary
         return self.extend_feature_columns(feature_columns)
 
-    # def get_deep_and_wide_columns(self, feature_columns):
-    #     """Creates deep and wide feature_column lists.
-    #
-    #     Given a list of feature_column(s), each feature_column is categorised as either:
-    #     1) dense, if the column is tf.feature_column._NumericColumn or feature_column._EmbeddingColumn,
-    #     2) categorical, if the column is tf.feature_column._VocabularyListCategoricalColumn or
-    #     tf.feature_column._BucketizedColumn, or
-    #     3) sparse, if the column is tf.feature_column._HashedCategoricalColumn or tf.feature_column._CrossedColumn.
-    #
-    #     If use_indicators=True, then categorical_columns are converted into indicator_columns, and used as dense features
-    #     in the deep part of the model. if use_wide_columns=True, then categorical_columns are used as sparse features
-    #     in the wide part of the model.
-    #
-    #     deep_columns = dense_columns + indicator_columns
-    #     wide_columns = categorical_columns + sparse_columns
-    #
-    #     Args:
-    #         feature_columns: [tf.feature_column] - A list of tf.feature_column objects.
-    #     Returns:
-    #         [tf.feature_column],[tf.feature_column]: deep and wide feature_column lists.
-    #     """
-    #     dense_columns = list(
-    #         filter(lambda column: isinstance(column, feature_column._NumericColumn) |
-    #                               isinstance(column, feature_column._EmbeddingColumn),
-    #                feature_columns)
-    #     )
-    #
-    #     categorical_columns = list(
-    #         filter(lambda column: isinstance(column, feature_column._VocabularyListCategoricalColumn) |
-    #                               isinstance(column, feature_column._IdentityCategoricalColumn) |
-    #                               isinstance(column, feature_column._BucketizedColumn),
-    #                feature_columns)
-    #     )
-    #
-    #     sparse_columns = list(
-    #         filter(lambda column: isinstance(column, feature_column._HashedCategoricalColumn) |
-    #                               isinstance(column, feature_column._CrossedColumn),
-    #                feature_columns)
-    #     )
-    #
-    #     indicator_columns = []
-    #
-    #     encode_one_hot = self.p.encode_one_hot
-    #     as_wide_columns = self.p.as_wide_columns
-    #
-    #     # if encode_one_hot=True, then categorical_columns are converted into indicator_column(s),
-    #     # and used as dense features in the deep part of the model.
-    #     # if as_wide_columns=True, then categorical_columns are used as sparse features in the wide part of the model.
-    #
-    #     if encode_one_hot:
-    #         indicator_columns = list(
-    #             map(lambda column: tf.feature_column.indicator_column(column),
-    #                 categorical_columns)
-    #         )
-    #
-    #     deep_columns = dense_columns + indicator_columns
-    #     wide_columns = sparse_columns + (categorical_columns if as_wide_columns else [])
-    #
-    #     return deep_columns, wide_columns
+    def get_deep_and_wide_columns(self, feature_columns):
+        """Creates deep and wide feature_column lists.
+
+        Given a list of feature_column(s), each feature_column is categorised as either:
+        1) dense, if the column is tf.feature_column._NumericColumn or feature_column._EmbeddingColumn,
+        2) categorical, if the column is tf.feature_column._VocabularyListCategoricalColumn or
+        tf.feature_column._BucketizedColumn, or
+        3) sparse, if the column is tf.feature_column._HashedCategoricalColumn or tf.feature_column._CrossedColumn.
+
+        If use_indicators=True, then categorical_columns are converted into indicator_columns, and used as dense features
+        in the deep part of the model. if use_wide_columns=True, then categorical_columns are used as sparse features
+        in the wide part of the model.
+
+        deep_columns = dense_columns + indicator_columns
+        wide_columns = categorical_columns + sparse_columns
+
+        Args:
+            feature_columns: [tf.feature_column] - A list of tf.feature_column objects.
+        Returns:
+            [tf.feature_column],[tf.feature_column]: deep and wide feature_column lists.
+        """
+        dense_columns = list(
+            filter(lambda column: isinstance(column, feature_column._NumericColumn) |
+                                  isinstance(column, feature_column._EmbeddingColumn),
+                   feature_columns)
+        )
+
+        categorical_columns = list(
+            filter(lambda column: isinstance(column, feature_column._VocabularyListCategoricalColumn) |
+                                  isinstance(column, feature_column._IdentityCategoricalColumn) |
+                                  isinstance(column, feature_column._BucketizedColumn),
+                   feature_columns)
+        )
+
+        sparse_columns = list(
+            filter(lambda column: isinstance(column, feature_column._HashedCategoricalColumn) |
+                                  isinstance(column, feature_column._CrossedColumn),
+                   feature_columns)
+        )
+
+        indicator_columns = []
+
+        encode_one_hot = self.p.encode_one_hot
+        as_wide_columns = self.p.as_wide_columns
+
+        # if encode_one_hot=True, then categorical_columns are converted into indicator_column(s),
+        # and used as dense features in the deep part of the model.
+        # if as_wide_columns=True, then categorical_columns are used as sparse features in the wide part of the model.
+
+        if encode_one_hot:
+            indicator_columns = list(
+                map(lambda column: tf.feature_column.indicator_column(column),
+                    categorical_columns)
+            )
+
+        deep_columns = dense_columns + indicator_columns
+        wide_columns = sparse_columns + (categorical_columns if as_wide_columns else [])
+
+        return deep_columns, wide_columns
 
 Feature.instance = Feature()
 

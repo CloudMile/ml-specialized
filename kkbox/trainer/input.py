@@ -75,8 +75,8 @@ class Input(object):
             songs['artist_name'] = str2tuple(songs['artist_name'])
             songs['composer'] = str2tuple(songs['composer'])
             songs['lyricist'] = str2tuple(songs['lyricist'])
-            songs['language'] = songs.language.fillna(0).map(int, na_action='ignore').map(str)
-
+            # songs['language'] = songs.language.fillna(0).map(int, na_action='ignore').map(str)
+            songs['language'] = songs.language.map(lambda e: str(int(float(e))), na_action='ignore').fillna('')
             members.to_pickle(f'{self.p.cleaned_path}/members.pkl')
             songs.to_pickle(f'{self.p.cleaned_path}/songs.pkl')
             ret = data

@@ -21,30 +21,22 @@ import tensorflow as tf
 # task type can be either 'classification' or 'regression', based on the target feature in the dataset
 TASK_TYPE = 'custom'
 
-# RAW_HEADER = ['Store', 'DayOfWeek', 'Date', 'Sales', 'Customers',
-#               'Open', 'Promo', 'StateHoliday', 'SchoolHoliday', 'StoreType',
-#               'Assortment', 'CompetitionDistance', 'CompetitionOpenSinceMonth', 'CompetitionOpenSinceYear', 'Promo2',
-#               'Promo2SinceWeek', 'Promo2SinceYear', 'PromoInterval', 'State']
-#
-# RAW_DTYPES = [str, str, str, int, int,
-#               int, int, str, str, str,
-#               str, float, str, str, int,
-#               str, str, str, str]
-#
-# HEADER_MAPPING = {
-#     'Store': 'store',
-#     'DayOfWeek': 'day_of_week',
-#     'Date': 'date',
-#     'Sales': 'sales',
-#     # 'Customers': 'customers',
-#     'Open': 'open',
-#     'Promo': 'promo',
-#     'StateHoliday': 'state_holiday',
-#     'SchoolHoliday': 'school_holiday',
-#     'StoreType': 'store_type',
-#     'Assortment': 'assortment',
-#     'State': 'state'
-# }
+RAW_HEADER = [
+    'msno', 'song_id', 'source_system_tab', 'source_screen_name', 'source_type',
+    'city', 'bd', 'gender', 'registered_via', 'registration_init_time',
+    'expiration_date', 'song_length', 'genre_ids', 'artist_name', 'composer',
+    'lyricist', 'language', 'name', 'isrc',
+    'target'
+]
+
+RAW_DTYPES = [
+    str, str, str, str, str,
+    str, str, str, str, str,
+    str, float, str, str, str,
+    str, str, str, str,
+    int
+]
+
 
 MSNO_EXTRA_COLS = [
     'msno_age_catg', 'msno_age_num', 'msno_tenure',

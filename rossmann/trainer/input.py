@@ -21,18 +21,19 @@ class Input(object):
     def clean(self, data, is_serving=False):
         self.logger.info(f'Clean start, is_serving: {is_serving}')
         s = datetime.now()
+        raw_dtype = dict(zip(metadata.RAW_HEADER, metadata.RAW_DTYPES))
         if isinstance(data, str):
-            data = pd.read_csv(data)
+            data = pd.read_csv(data, dtype=raw_dtype)
 
         ret = None
         # Handle missing value and change column name style to PEP8 and resort columns order
         if not is_serving:
-            store = pd.read_csv(self.p.store_data)
+            store = pd.read_csv(self.p.store_data, dtype=raw_dtype)
             store['CompetitionDistance'].fillna(store.CompetitionDistance.median(), inplace=True)
             store = store.rename(index=str, columns=metadata.HEADER_MAPPING)
             store.to_csv(f'{self.p.cleaned_path}/store.csv', index=False)
 
-            store_state = pd.read_csv(self.p.store_state)
+            store_state = pd.read_csv(self.p.store_state, dtype=raw_dtype)
             store_state = store_state.rename(index=str, columns=metadata.HEADER_MAPPING)
             store_state.to_csv(f'{self.p.cleaned_path}/store_state.csv', index=False)
 
@@ -54,12 +55,13 @@ class Input(object):
         self.logger.info(f'Prepare start, is_serving: {is_serving}')
         s = datetime.now()
 
+        dtype = self.get_processed_dtype(is_serving=is_serving)
         if isinstance(data, str):
-            data = pd.read_csv(data)
+            data = pd.read_csv(data, dtype=dtype)
 
         # Train, eval
         if not is_serving:
-            store = pd.read_csv(f'{self.p.cleaned_path}/store.csv')
+            store = pd.read_csv(f'{self.p.cleaned_path}/store.csv', dtype=dtype)
             # CompetitionOpenSinceMonth, CompetitionOpenSinceYear need to be transform to days count from 1970/01/01
             def map_fn(e):
                 y, m = e
@@ -89,11 +91,11 @@ class Input(object):
 
             # Merge store_state to store and persistent
             self.logger.info(f'Persisten store to {self.p.prepared_path}/store.csv')
-            store_states = pd.read_csv(f'{self.p.cleaned_path}/store_state.csv')
+            store_states = pd.read_csv(f'{self.p.cleaned_path}/store_state.csv', dtype=dtype)
             store = store.merge(store_states, on='store', how='left')
             store.to_csv(f'{self.p.prepared_path}/store.csv', index=False)
         else:
-            store = pd.read_csv(f'{self.p.prepared_path}/store.csv')
+            store = pd.read_csv(f'{self.p.prepared_path}/store.csv', dtype=dtype)
 
         # Construct year, month, day columns, maybe on specific day or period will has some trends.
         dt = pd.to_datetime(data['date'])
@@ -106,6 +108,9 @@ class Input(object):
         # e.g: if PromoInterval = 'Jan,Apr,Jul,Oct', means month in 1, 4, 7, 10 in every year will
         # have another promotion on some products, so it need to drop origin Promo2
         # and recalculate if has any promotion
+
+        # # todo hack
+        # return merge
         merge['promo2'] = self.cal_promo2(merge)
         merge = merge.drop('promo_interval', 1)
 
@@ -115,7 +120,7 @@ class Input(object):
             merge['sales_mean'] = sales_mean.reindex(merge.store).values
 
             # Add date for split train valid
-            merge = merge.query('open == 1 and sales > 0')[['date'] + metadata.HEADER]
+            merge = merge.query('open == "1" and sales > 0')[['date'] + metadata.HEADER]
             merge.to_csv(f'{self.p.prepared_path}/tr.csv', index=False)
         else:
             with open(self.p.feature_stats_file, 'r') as fp:
@@ -164,8 +169,9 @@ class Input(object):
         self.logger.info(f'Prepare start, is_serving: {is_serving}')
         s = datetime.now()
 
+        dtype = self.get_processed_dtype(is_serving=is_serving)
         if isinstance(data, str):
-            data = pd.read_csv(data)
+            data = pd.read_csv(data, dtype=dtype)
 
         if not is_serving:
             self.logger.info(f'Do np.log(data.{metadata.TARGET_NAME}) !')
@@ -221,7 +227,7 @@ class Input(object):
                 'May': 5, 'Jun': 6, 'Jul': 7, 'Aug': 8,
                 'Sept': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12}
         base = np.zeros(len(merge))
-        valid_cond = merge.promo2 == 1
+        valid_cond = merge.promo2 == '1'
         merge = merge[valid_cond]
         df = pd.DataFrame({'month': merge.month.values,
                            'interval': merge.promo_interval.str.split(',').values})

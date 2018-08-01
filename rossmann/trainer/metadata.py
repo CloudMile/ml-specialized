@@ -1,33 +1,11 @@
-#!/usr/bin/env python
-
-# Copyright 2017 Google Inc. All Rights Reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
-# ************************************************************************
-# YOU NEED TO MODIFY THE META DATA TO ADAPT THE TRAINER TEMPLATE YOUR DATA
-# ************************************************************************
-
 # task type can be either 'classification' or 'regression', based on the target feature in the dataset
-TASK_TYPE = 'custom'
-
 RAW_HEADER = ['Store', 'DayOfWeek', 'Date', 'Sales', 'Customers', 'Open', 'Promo',
        'StateHoliday', 'SchoolHoliday', 'StoreType', 'Assortment',
        'CompetitionDistance', 'CompetitionOpenSinceMonth',
        'CompetitionOpenSinceYear', 'Promo2', 'Promo2SinceWeek',
        'Promo2SinceYear', 'PromoInterval', 'State']
 
-RAW_DTYPES = [str, str, str, float, float, str, str,
+RAW_DTYPES = [int, str, str, float, float, str, str,
               str, str, str, str,
               float, str,
               str, str, str,
@@ -103,6 +81,7 @@ CONSTRUCTED_CATEGORICAL_FEATURE_NAMES_WITH_IDENTITY = {}
 # a dictionary of categorical features with few nominal values (to be encoded as one-hot indicators)
 #  In the dictionary, the key is the feature name, and the value is the list of feature vocabulary
 INPUT_CATEGORICAL_FEATURE_NAMES_WITH_VOCABULARY = {
+    # Embedding features
     'state': ['HE', 'HH', 'SH', 'NW', 'BE', 'BY', 'SN', 'RP', 'TH', 'HB,NI', 'BW', 'ST'],
     'state_holiday': ['a', 'b', 'c', '0'],
     'assortment': ['a', 'b', 'c', '0'],
@@ -121,6 +100,8 @@ INPUT_CATEGORICAL_FEATURE_NAMES_WITH_VOCABULARY = {
             '11', '12', '13', '14', '15', '16', '17', '18', '19', '20',
             '21', '22', '23', '24', '25', '26', '27', '28', '29', '30',
             '31'],
+
+    # OneHot features
     'day_of_week': ['1', '2', '3', '4', '5', '6', '7'],
     'open': ['0', '1'],
     'promo': ['0', '1'],
@@ -149,7 +130,7 @@ WEIGHT_COLUMN_NAME = None
 TARGET_NAME = 'sales'
 
 # list of the class values (labels) in a classification dataset
-TARGET_LABELS = []
+# TARGET_LABELS = []
 
 # list of the columns expected during serving (which probably different than the header of the training data)
 SERVING_COLUMNS = HEADER.copy()

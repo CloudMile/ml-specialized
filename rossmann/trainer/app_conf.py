@@ -32,22 +32,24 @@ class Config(object):
 
     # Data prepare relevant parameter
     valid_size = 0.3
-    model_dir = f'{model_path}/dnn_regressor_dropout'
+    model_dir = f'{model_path}/dnn_regressor_large_emb_128_64_32'
     # Dir name in {model_dir}/export
     export_name = 'estimator'
 
     # Hyper parameter
     mlp_layers = [128, 64, 32]
+    # mlp_layers = [1024, 512, 256]
     learning_rate = 0.005
+    drop_rate = 0.3
     keep_checkpoint_max = 3
     log_step_count_steps = 500
     train_steps = 2308 * 8
     valid_steps = 989
     batch_size = 256
-    num_epochs = 10
+    num_epochs = 1
     # eval_every_secs = 600
-    encode_one_hot = False
-    as_wide_columns = False
+    # encode_one_hot = False
+    # as_wide_columns = False
 
     # Serving relevant
     serving_format = 'json' # [json]

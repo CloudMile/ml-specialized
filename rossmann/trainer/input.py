@@ -25,6 +25,10 @@ class Input(object):
         if isinstance(data, str):
             data = pd.read_csv(data, dtype=raw_dtype)
 
+        def fill_empty(data):
+            for col in ('day_of_week', 'date', 'open', 'promo', 'state_holiday', 'school_holiday'):
+                data[col].fillna('', inplace=True)
+
         ret = None
         # Handle missing value and change column name style to PEP8 and resort columns order
         if not is_serving:
@@ -38,15 +42,11 @@ class Input(object):
             store_state.to_csv(f'{self.p.cleaned_path}/store_state.csv', index=False)
 
             ret = data.rename(index=str, columns=metadata.HEADER_MAPPING)
+            fill_empty(ret)
             ret.to_csv(f'{self.p.cleaned_path}/tr.csv', index=False)
         else:
             ret = data.rename(index=str, columns=metadata.HEADER_MAPPING)
-            with open(self.p.feature_stats_file) as fp:
-                stats = json.load(fp)
-            ret['competition_distance'].fillna(stats['competition_distance']['median'], inplace=True)
-            # defaults = dict(zip(metadata.SERVING_COLUMNS, metadata.SERVING_DEFAULTS))
-            # for col, dft in defaults.items():
-            #     ret[col].fillna(dft, inplace=True)
+            fill_empty(ret)
 
         self.logger.info(f'Clean take time {datetime.now() - s}')
         return ret
@@ -99,18 +99,15 @@ class Input(object):
 
         # Construct year, month, day columns, maybe on specific day or period will has some trends.
         dt = pd.to_datetime(data['date'])
-        data['year'] = dt.dt.year
-        data['month'] = dt.dt.month
-        data['day'] = dt.dt.day
-        merge = data.merge(store, how='left', on='store') # .merge(store_states, how='left', on='store')
+        data['year'] = dt.dt.year.map(str)
+        data['month'] = dt.dt.month.map(str)
+        data['day'] = dt.dt.day.map(str)
+        merge = data.merge(store, how='left', on='store')
 
         # Calculate real promo2 happened timing, promo2 have periodicity per year,
         # e.g: if PromoInterval = 'Jan,Apr,Jul,Oct', means month in 1, 4, 7, 10 in every year will
         # have another promotion on some products, so it need to drop origin Promo2
         # and recalculate if has any promotion
-
-        # # todo hack
-        # return merge
         merge['promo2'] = self.cal_promo2(merge)
         merge = merge.drop('promo_interval', 1)
 
@@ -177,12 +174,20 @@ class Input(object):
             self.logger.info(f'Do np.log(data.{metadata.TARGET_NAME}) !')
             data[metadata.TARGET_NAME] = np.log1p(data[metadata.TARGET_NAME])
             shutil.copy2(f'{self.p.prepared_path}/store.csv', f'{self.p.transformed_path}')
-        # else:
-        #     del dtype[metadata.TARGET_NAME]
-        #     data['open'] = data.open.fillna(0)
+
+        # Although we have fill missing value before write to csv, zero-length string values still
+        # be treat as NaN value in pandas, dataset api will fill default value but not when serving
+        # so here we will fill empty string to categorical feature
+        data = self.fill_catg_na(data)
 
         self.logger.info(f'Transform take time {datetime.now() - s}')
-        return data # .astype(dtype=dtype, errors='ignore')
+        return data
+
+    def fill_catg_na(self, data):
+        for col in data.columns:
+            if col in metadata.INPUT_CATEGORICAL_FEATURE_NAMES:
+                data[col].fillna('', inplace=True)
+        return data
 
     def split(self, data):
         """Merged training data
@@ -206,6 +211,8 @@ class Input(object):
             tr.append(df[:cut_pos])
             vl.append(df[cut_pos:])
 
+        pd.Series.to_json()
+
         tr, vl = pd.concat(tr, 0), pd.concat(vl, 0)
         # In order to inspect time series figure, persistent date column of training data,
         tr.date.to_json(self.p.tr_dt_file)
@@ -218,15 +225,10 @@ class Input(object):
         return self
 
     def cal_promo2(selfself, merge):
-        """
-
-        :param merge:
-        :return:
-        """
-        map_ = {'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4,
-                'May': 5, 'Jun': 6, 'Jul': 7, 'Aug': 8,
-                'Sept': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12}
-        base = np.zeros(len(merge))
+        map_ = {'Jan': '1', 'Feb': '2', 'Mar': '3', 'Apr': '4',
+                'May': '5', 'Jun': '6', 'Jul': '7', 'Aug': '8',
+                'Sept': '9', 'Oct': '10', 'Nov': '11', 'Dec': '12'}
+        base = np.array(['0'] * len(merge))
         valid_cond = merge.promo2 == '1'
         merge = merge[valid_cond]
         df = pd.DataFrame({'month': merge.month.values,
@@ -237,8 +239,9 @@ class Input(object):
         df.interval.map(interval_concat.extend)
         df['interval'] = np.split(pd.Series(interval_concat).map(map_).values, cut_idx)[:-1]
 
-        base[valid_cond] = df.apply(lambda row: row.month in row.interval, 1).values
-        return base.astype(int)
+        base[valid_cond] = pd.Series(list(zip(df.month, df.interval))) \
+                             .map(lambda row: str(int(row[0] in row[1])))
+        return base
 
     def get_processed_dtype(self, is_serving=False):
         header = metadata.HEADER if not is_serving else metadata.SERVING_COLUMNS
@@ -498,18 +501,3 @@ class Input(object):
         return _input_fn
 
 Input.instance = Input()
-
-
-
-
-
-class IteratorInitializerHook(tf.train.SessionRunHook):
-    """Hook to initialise data iterator after Session is created."""
-
-    def __init__(self):
-        super(IteratorInitializerHook, self).__init__()
-        self.iterator_initializer_func = None
-
-    def after_create_session(self, session, coord):
-        """Initialise the iterator after the session has been created."""
-        self.iterator_initializer_func(session)

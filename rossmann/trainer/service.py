@@ -12,8 +12,8 @@ class Service(object):
     logger = utils.logger(__name__)
 
     def __init__(self):
-        self.p = app_conf.instance
-        self.inp = input.Input.instance
+        self.p :app_conf.Config = app_conf.instance
+        self.inp :input.Input = input.Input.instance
 
     def train(self, reset=True):
         """Use tf.estimator.DNNRegressor to train model,
@@ -94,7 +94,7 @@ class Service(object):
         :param fpath:
         :return:
         """
-        return pd.read_csv(fpath)
+        return pd.read_csv(fpath, dtype=self.inp.get_processed_dtype(is_serving=True))
 
     def find_ml(self):
         """GCP ML service
@@ -185,7 +185,6 @@ class Service(object):
         # return data type must be in records mode
         result = ml.projects().predict(name=model_uri, body={'instances': datasource}).execute()
         return [rec.get('predictions')[0] for rec in result.get('predictions')]
-
 
 Service.instance = Service()
 

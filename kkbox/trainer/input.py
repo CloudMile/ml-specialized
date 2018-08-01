@@ -33,23 +33,17 @@ class Input(object):
             data = pd.read_csv(data)
 
         ret = None
+        data['source_system_tab'] = data.source_system_tab.fillna('')
+        data['source_screen_name'] = data.source_screen_name.fillna('')
+        data['source_type'] = data.source_type.fillna('')
+
         if is_serving:
-            data['source_system_tab'] = data.source_system_tab.fillna('')
-            data['source_screen_name'] = data.source_screen_name.fillna('')
-            data['source_type'] = data.source_type.fillna('')
-            # members = pd.read_pickle(f'{self.p.cleaned_path}/members.pkl')
-            # songs = pd.read_pickle(f'{self.p.cleaned_path}/songs.pkl')
             ret = data
         else:
             members = pd.read_csv('./data/members.csv')
             songs = pd.read_csv('./data/songs.csv') \
                       .merge(pd.read_csv('./data/song_extra_info.csv'), how='left', on='song_id') \
                       .drop('name', 1)
-
-            # Clean input table
-            data['source_system_tab'] = data.source_system_tab.fillna('')
-            data['source_screen_name'] = data.source_screen_name.fillna('')
-            data['source_type'] = data.source_type.fillna('')
 
             self.logger.info(f'Clean table members.')
             # Clean member table

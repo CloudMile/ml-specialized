@@ -31,7 +31,7 @@ class Model(object):
             # optimizer='Adagrad',
             # optimizer=tf.train.GradientDescentOptimizer(learning_rate=0.001),
             activation_fn=tf.nn.selu,
-            dropout=0.3,
+            dropout=self.p.drop_rate,
             input_layer_partitioner=None,
             config=config
         )
@@ -208,21 +208,18 @@ class Feature(object):
             {string: tf.feature_column}: extended feature_column(s) dictionary
         """
         dims = {
-            # 'store_open': 16,
-            # 'day_of_week': 3,
-            # 'promo': 8,
-            'state_holiday': 3,
-            'month': 3,
-            'day': 5,
-            'state': 3,
+            'state_holiday': 8,
+            'month': 8,
+            'day': 8,
+            'state': 8,
             'store': 16,
-            'year': 3,
-            'assortment': 3,
-            'store_type': 3,
-            'competition_open_since_month': 3,
-            'competition_open_since_year': 3,
-            'promo2since_week': 3,
-            'promo2since_year': 3
+            'year': 8,
+            'assortment': 8,
+            'store_type': 8,
+            'competition_open_since_month': 8,
+            'competition_open_since_year': 8,
+            'promo2since_week': 8,
+            'promo2since_year': 8
         }
         for name in metadata.INPUT_CATEGORICAL_FEATURE_NAMES:
             if name not in dims:
@@ -233,7 +230,6 @@ class Feature(object):
                 feature_columns[name] = tf.feature_column.embedding_column(
                     feature_columns[name], dims[name]
                 )
-
 
         return feature_columns
 

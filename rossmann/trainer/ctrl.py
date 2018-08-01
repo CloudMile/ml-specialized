@@ -99,13 +99,16 @@ class Ctrl(object):
 
         if p.is_src_file:
             datasource = self.service.read_transformed(p.datasource)
+            datasource = self.input.fill_catg_na(datasource)
         else:
             datasource = p.datasource
 
         base = np.zeros(len(datasource))
-        open_flag = datasource.open == 1
+        open_flag = datasource.open == '1'
+        preds = predict_fn(datasource[open_flag]).get('predictions').ravel()
+
         # Column sales has been take np.log1p, so predict take np.expm
-        preds = np.round(np.expm1(predict_fn(datasource[open_flag]).get('predictions').ravel()))
+        preds = np.round(np.expm1(preds))
         base[open_flag] = preds
         return base
 
@@ -120,7 +123,7 @@ class Ctrl(object):
         if not isinstance(datasource, pd.DataFrame):
             datasource = pd.DataFrame(datasource) # .to_dict('records')
 
-        open_flag = datasource.open == 1
+        open_flag = datasource.open == '1'
         preds = self.service.online_predict(datasource[open_flag].to_dict('records'), p.model_name)
         base[open_flag] = np.round(np.expm1(preds))
         return base

@@ -211,8 +211,6 @@ class Input(object):
             tr.append(df[:cut_pos])
             vl.append(df[cut_pos:])
 
-        pd.Series.to_json()
-
         tr, vl = pd.concat(tr, 0), pd.concat(vl, 0)
         # In order to inspect time series figure, persistent date column of training data,
         tr.date.to_json(self.p.tr_dt_file)
@@ -297,16 +295,23 @@ class Input(object):
 
         feat_obj = m.Feature.instance
         feat_cols = feat_obj.create_feature_columns()
-        dtype = self.get_processed_dtype()
-        del dtype[metadata.TARGET_NAME]
-
-        mappiing = {str: tf.string, int: tf.int32, float: tf.float32}
+        input_feature_columns = [feat_cols[feature_name] for feature_name in metadata.INPUT_FEATURE_NAMES]
 
         inputs = {}
-        for name, column in feat_cols.items():
-            # print(f'name: {name}, column: {column}')
-            # inputs[name] = tf.placeholder(shape=[None], dtype=column.dtype, name=name)
-            inputs[name] = tf.placeholder(shape=[None], dtype=mappiing[dtype[name]], name=name)
+        for column in input_feature_columns:
+            if column.name in metadata.INPUT_CATEGORICAL_FEATURE_NAMES_WITH_IDENTITY:
+                inputs[column.name] = tf.placeholder(shape=[None], dtype=tf.int32, name=column.name)
+            else:
+                inputs[column.name] = tf.placeholder(shape=[None], dtype=column.dtype, name=column.name)
+
+        # dtype = self.get_processed_dtype(is_serving=True)
+        # mappiing = {str: tf.string, int: tf.int32, float: tf.float32}
+        #
+        # inputs = {}
+        # for name, column in feat_cols.items():
+        #     # print(f'name: {name}, column: {column}')
+        #     # inputs[name] = tf.placeholder(shape=[None], dtype=column.dtype, name=name)
+        #     inputs[name] = tf.placeholder(shape=[None], dtype=mappiing[dtype[name]], name=name)
 
         features = {
             key: tf.expand_dims(tensor, -1)

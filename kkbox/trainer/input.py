@@ -334,8 +334,7 @@ class Input(object):
                 data[multi_catg])
 
         # Numeric features
-        for numeric in ('registration_init_time', 'expiration_date', 'msno_age_num', 'msno_tenure', 'song_yy',
-                        'song_length', 'song_pplrty', 'song_clicks'):
+        for numeric in metadata.NUMERIC_COLS:
             self.logger.info(f'fit {numeric} ...')
             mapper_dict[numeric] = utils.NumericMapper(scaler=preprocessing.StandardScaler()).fit(data[numeric])
 
@@ -369,7 +368,10 @@ class Input(object):
             for feat in ('song_id', 'source_system_tab', 'source_screen_name', 'source_type'):
                 self.logger.info(f'transform {feat}, vocab_key: {feat} ...')
                 data[feat] = self._transform_feature(data[feat], mapper_dict[feat])
-            ret = self.train_merge(data, members, songs)
+
+            self.logger.info('Merge input data ...')
+            ret = self.train_merge(data, members, songs, mapper_dict, is_serving=is_serving)
+
         # Train, eval period
         else:
             tr = data
@@ -456,9 +458,9 @@ class Input(object):
             songs[['raw_song_id'] + metadata.SONG_FEATURES].to_pickle(f'{self.p.transformed_path}/songs.pkl')
 
             self.logger.info('Merge train data')
-            tr = self.train_merge(tr, members, songs)
+            tr = self.train_merge(tr, members, songs, mapper_dict)
             self.logger.info('Merge valid data')
-            vl = self.train_merge(vl, members, songs)
+            vl = self.train_merge(vl, members, songs, mapper_dict)
 
             self.logger.info('Persistent train valid data, maybe take a while ...')
             s_ = datetime.now()
@@ -514,12 +516,16 @@ class Input(object):
         self.logger.info(f'transform take time {datetime.now() - s}')
         return ret
 
-    def train_merge(self, inputs, members, songs):
+    def train_merge(self, inputs, members, songs, mapper_dict, is_serving=False):
+        columns = metadata.HEADER if not is_serving else metadata.SERVING_COLUMNS
         ret = inputs.merge(members, how='left', on='raw_msno') \
                     .merge(songs, how='left', on='raw_song_id', suffixes=('', '_y')) \
-                    .drop(['raw_msno', 'raw_song_id', 'song_id_y'], 1)[metadata.HEADER]
+                    .drop(['raw_msno', 'raw_song_id', 'song_id_y'], 1)[columns]
 
-        defaults = dict(zip(metadata.HEADER, metadata.HEADER_DEFAULTS))
+        if not is_serving:
+            defaults = dict(zip(columns, metadata.HEADER_DEFAULTS))
+        else:
+            defaults = dict(zip(columns, metadata.SERVING_DEFAULTS))
 
         def multi_fillna(df, colname):
             na_value = tuple(defaults[colname])
@@ -531,10 +537,16 @@ class Input(object):
                     colname in ('genre_ids', 'artist_name', 'composer', 'lyricist'):
                 multi_fillna(ret, colname)
             else:
-                na_value = defaults[colname][0]
-                ret[colname] = ret[colname].fillna(defaults[colname][0])
-                if type(na_value) == int:
-                    ret[colname] = ret[colname].astype(int)
+                if colname in metadata.NUMERIC_COLS:
+                    ret[colname] = ret[colname].fillna( mapper_dict[colname].median_ )
+                else:
+                    ret[colname] = ret[colname].fillna( defaults[colname][0] )
+                    if type(defaults[colname][0]) == int:
+                        ret[colname] = ret[colname].astype(int)
+                # na_value = defaults[colname][0]
+                # ret[colname] = ret[colname].fillna(defaults[colname][0])
+                # if type(na_value) == int:
+                #     ret[colname] = ret[colname].astype(int)
         return ret
 
     def json_serving_input_fn(self):
@@ -554,12 +566,29 @@ class Input(object):
             receiver_tensors=inputs
         )
 
+    def get_multi_cols(self, is_serving=False):
+        columns = metadata.HEADER if not is_serving else metadata.SERVING_COLUMNS
+        return list(filter(lambda col: (col.endswith('_hist') or
+                                        col.endswith('_count') or col.endswith('_mean') or
+                                        col in ('genre_ids', 'artist_name', 'composer', 'lyricist')),
+                           columns))
+
+    def get_uni_cols(self, is_serving=False):
+        columns = metadata.HEADER if not is_serving else metadata.SERVING_COLUMNS
+        multi_cols = self.get_multi_cols()
+        return list(filter(lambda col: col not in multi_cols, columns))
+
+    def get_dtype(self, is_serving=False):
+        columns = metadata.HEADER if not is_serving else metadata.SERVING_COLUMNS
+        defaults = metadata.HEADER_DEFAULTS if not is_serving else metadata.SERVING_DEFAULTS
+        return dict( map(lambda e: (e[0], type(e[1][0])), list(zip(columns, defaults))) )
+
     def get_shape(self, is_serving=False):
         cols = metadata.SERVING_COLUMNS if is_serving else metadata.HEADER
         shapes = []
+        multi_cols = self.get_multi_cols(is_serving)
         for colname in cols:
-            if colname.endswith('_hist') or colname.endswith('_count') or colname.endswith('_mean') or \
-                    colname in ('genre_ids', 'artist_name', 'composer', 'lyricist'):
+            if colname in multi_cols:
                 shapes.append([None])
             else:
                 shapes.append([])

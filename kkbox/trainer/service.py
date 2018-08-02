@@ -103,6 +103,11 @@ class Service(object):
         #     estimator.evaluate(valid_fn, steps=10)
         return self
 
+    def read_transformed(self, fpath):
+        data = self.inp.clean(fpath, is_serving=True)
+        data = self.inp.prepare(data, is_serving=True)
+        return self.inp.transform(data, is_serving=True)
+
     def find_ml(self):
         """GCP ML service
 

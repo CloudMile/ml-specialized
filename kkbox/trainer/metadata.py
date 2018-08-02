@@ -152,7 +152,10 @@ EMB_COLS = {
     # 'song_query': 16,
 }
 
-
+NUMERIC_COLS = [
+    'registration_init_time', 'expiration_date', 'msno_age_num', 'msno_tenure', 'song_yy',
+    'song_length', 'song_pplrty', 'song_clicks'
+]
 
 
 # target feature name (response or class variable)

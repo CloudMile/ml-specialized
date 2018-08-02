@@ -9,11 +9,12 @@ from . import utils, app_conf, input, metadata
 class Model(object):
     logger = utils.logger(__name__)
 
-    def __init__(self, model_dir):
+    def __init__(self, model_dir, name='deep'):
         """
 
         :param model_dir:
         """
+        self.name = name
         self.p = app_conf.instance
         self.model_dir = model_dir
         self.feature = Feature.instance
@@ -21,20 +22,44 @@ class Model(object):
 
     def get_estimator(self, config:tf.estimator.RunConfig):
         feat_spec = list(self.feature.create_feature_columns().values())
-        est = tf.estimator.DNNRegressor(
-            hidden_units=self.p.mlp_layers,
-            feature_columns=feat_spec,
-            model_dir=self.model_dir,
-            label_dimension=1,
-            weight_column=None,
-            optimizer=tf.train.AdamOptimizer(self.p.learning_rate),
-            # optimizer='Adagrad',
-            # optimizer=tf.train.GradientDescentOptimizer(learning_rate=0.001),
-            activation_fn=tf.nn.selu,
-            dropout=self.p.drop_rate,
-            input_layer_partitioner=None,
-            config=config
-        )
+        deep_columns, wide_columns = self.feature.get_deep_and_wide_columns(feat_spec)
+        if self.name == 'deep':
+            est = tf.estimator.DNNRegressor(
+                hidden_units=self.p.mlp_layers,
+                feature_columns=deep_columns,
+                model_dir=self.model_dir,
+                label_dimension=1,
+                weight_column=None,
+                optimizer=tf.train.AdamOptimizer(self.p.learning_rate),
+                # optimizer='Adagrad',
+                # optimizer=tf.train.GradientDescentOptimizer(learning_rate=0.001),
+                activation_fn=tf.nn.selu,
+                dropout=self.p.drop_rate,
+                input_layer_partitioner=None,
+                config=config
+            )
+        else:
+
+            est = tf.estimator.DNNLinearCombinedRegressor(
+                model_dir=self.model_dir,
+                linear_feature_columns=wide_columns,
+                linear_optimizer='Ftrl',
+                # linear_optimizer=tf.train.GradientDescentOptimizer(self.p.learning_rate),
+                dnn_feature_columns=deep_columns,
+                # dnn_optimizer='Adagrad',
+                dnn_optimizer=tf.train.AdamOptimizer(self.p.learning_rate),
+                dnn_hidden_units=self.p.mlp_layers,
+                dnn_activation_fn=tf.nn.selu,
+                dnn_dropout=self.p.drop_rate,
+                label_dimension=1,
+                weight_column=None,
+                input_layer_partitioner=None,
+                config=config,
+                warm_start_from=None,
+                loss_reduction=tf.losses.Reduction.SUM
+            )
+
+        self.logger.info(f'Use {est}')
         # Create directory for export, it will raise error if in GCS environment
         try:
             os.makedirs(f'{self.p.model_dir}/export/{self.p.export_name}', exist_ok=True)
@@ -195,45 +220,6 @@ class Feature(object):
     def __init__(self):
         self.p = app_conf.instance
 
-    def extend_feature_columns(self, feature_columns):
-        """ Use to define additional feature columns, such as bucketized_column(s), crossed_column(s),
-        and embedding_column(s). task.HYPER_PARAMS can be used to parameterise the creation
-        of the extended columns (e.g., embedding dimensions, number of buckets, etc.).
-
-        Default behaviour is to return the original feature_columns list as-is.
-
-        Args:
-            feature_columns: {column_name: tf.feature_column} - dictionary of base feature_column(s)
-        Returns:
-            {string: tf.feature_column}: extended feature_column(s) dictionary
-        """
-        dims = {
-            'state_holiday': 8,
-            'month': 8,
-            'day': 8,
-            'state': 8,
-            'store': 16,
-            'year': 8,
-            'assortment': 8,
-            'store_type': 8,
-            'competition_open_since_month': 8,
-            'competition_open_since_year': 8,
-            'promo2since_week': 8,
-            'promo2since_year': 8
-        }
-        for name in metadata.INPUT_CATEGORICAL_FEATURE_NAMES:
-            if name not in dims:
-                feature_columns[name] = tf.feature_column.indicator_column(
-                    feature_columns[name]
-                )
-            else:
-                feature_columns[name] = tf.feature_column.embedding_column(
-                    feature_columns[name], dims[name]
-                )
-
-        return feature_columns
-
-
     def create_feature_columns(self):
         """Creates tensorFlow feature_column(s) based on the metadata of the input features.
 
@@ -323,6 +309,57 @@ class Feature(object):
         # add extended feature_column(s) before returning the complete feature_column dictionary
         return self.extend_feature_columns(feature_columns)
 
+    def extend_feature_columns(self, feature_columns):
+        """ Use to define additional feature columns, such as bucketized_column(s), crossed_column(s),
+        and embedding_column(s). task.HYPER_PARAMS can be used to parameterise the creation
+        of the extended columns (e.g., embedding dimensions, number of buckets, etc.).
+
+        Default behaviour is to return the original feature_columns list as-is.
+
+        Args:
+            feature_columns: {column_name: tf.feature_column} - dictionary of base feature_column(s)
+        Returns:
+            {string: tf.feature_column}: extended feature_column(s) dictionary
+        """
+        dims = {
+            'state_holiday': 8,
+            'month': 8,
+            'day': 8,
+            'state': 8,
+            'store': 16,
+            'year': 8,
+            'assortment': 8,
+            'store_type': 8,
+            'competition_open_since_month': 8,
+            'competition_open_since_year': 8,
+            'promo2since_week': 8,
+            'promo2since_year': 8
+        }
+        # Deep columns
+        for name in metadata.INPUT_CATEGORICAL_FEATURE_NAMES:
+            if name not in dims:
+                feature_columns[f'{name}_indic'] = tf.feature_column.indicator_column(
+                    feature_columns[name]
+                )
+            else:
+                feature_columns[f'{name}_emb'] = tf.feature_column.embedding_column(
+                    feature_columns[name], dims[name]
+                )
+        # Wide columns
+        feature_columns[f'promo_datetime_cross'] = tf.feature_column.crossed_column(
+            ['promo', 'promo2', 'year', 'month', 'day', 'day_of_week'], hash_bucket_size=int(1e4))
+
+        feature_columns[f'promo_holiday_cross'] = tf.feature_column.crossed_column(
+            ['promo', 'promo2', 'state', 'state_holiday', 'school_holiday'], hash_bucket_size=int(1e4))
+
+        feature_columns[f'store_type_cross'] = tf.feature_column.crossed_column(
+            ['state', 'store_type', 'assortment', 'day_of_week'], hash_bucket_size=int(1e4))
+
+        feature_columns[f'competition_cross'] = tf.feature_column.crossed_column(
+            ['competition_open_since_month', 'competition_open_since_year'], hash_bucket_size=int(1e4))
+
+        return feature_columns
+
     def get_deep_and_wide_columns(self, feature_columns):
         """Creates deep and wide feature_column lists.
 
@@ -363,23 +400,27 @@ class Feature(object):
                    feature_columns)
         )
 
-        indicator_columns = []
+        # indicator_columns = []
 
-        encode_one_hot = self.p.encode_one_hot
-        as_wide_columns = self.p.as_wide_columns
+        # encode_one_hot = self.p.encode_one_hot
+        # as_wide_columns = self.p.as_wide_columns
+        #
+        # # if encode_one_hot=True, then categorical_columns are converted into indicator_column(s),
+        # # and used as dense features in the deep part of the model.
+        # # if as_wide_columns=True, then categorical_columns are used as sparse features in the wide part of the model.
+        # if encode_one_hot:
+        #     indicator_columns = list(
+        #         map(lambda column: tf.feature_column.indicator_column(column),
+        #             categorical_columns)
+        #     )
 
-        # if encode_one_hot=True, then categorical_columns are converted into indicator_column(s),
-        # and used as dense features in the deep part of the model.
-        # if as_wide_columns=True, then categorical_columns are used as sparse features in the wide part of the model.
-
-        if encode_one_hot:
-            indicator_columns = list(
-                map(lambda column: tf.feature_column.indicator_column(column),
-                    categorical_columns)
-            )
+        indicator_columns = list(
+            filter(lambda column: isinstance(column, feature_column._IndicatorColumn),
+                   feature_columns)
+        )
 
         deep_columns = dense_columns + indicator_columns
-        wide_columns = sparse_columns + (categorical_columns if as_wide_columns else [])
+        wide_columns = sparse_columns # + (categorical_columns if as_wide_columns else [])
 
         return deep_columns, wide_columns
 

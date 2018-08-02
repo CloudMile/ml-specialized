@@ -15,12 +15,16 @@ class Service(object):
         self.p :app_conf.Config = app_conf.instance
         self.inp :input.Input = input.Input.instance
 
-    def train(self, reset=True):
+    def train(self, model_name='deep', reset=True):
         """Use tf.estimator.DNNRegressor to train model,
         eval at every epoch end, and export only when best (smallest) loss value occurs,
 
         :return: Self object
         """
+
+        assert model_name in ('deep', 'wide_and_deep'), \
+            "model_name only support ('deep', 'wide_and_deep')"
+
         if reset and tf.gfile.Exists(self.p.model_dir):
             self.logger.info(f"Deleted job_dir {self.p.model_dir} to avoid re-use")
             shutil.rmtree(self.p.model_dir, ignore_errors=True)
@@ -41,8 +45,10 @@ class Service(object):
             model_dir=self.p.model_dir
         )
 
-        model = m.Model(model_dir=self.p.model_dir)
-        self.logger.info(f"Model Directory: {run_config.model_dir}")
+        self.logger.info(f"Model_name: {model_name}")
+        self.logger.info(f"Model directory: {run_config.model_dir}")
+        model = m.Model(model_dir=self.p.model_dir, name=model_name)
+
 
         exporter = m.BestScoreExporter(
             self.p.export_name,

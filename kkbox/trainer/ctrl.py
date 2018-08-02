@@ -95,19 +95,16 @@ class Ctrl(object):
         from tensorflow.contrib import predictor
 
         export_dir = utils.find_latest_expdir(self.p)
-        predict_fn = predictor.from_saved_model(export_dir, signature_def_key='predict')
+        predict_fn = predictor.from_saved_model(export_dir, signature_def_key='outputs')
 
         if p.is_src_file:
             datasource = self.service.read_transformed(p.datasource)
         else:
             datasource = p.datasource
 
-        base = np.zeros(len(datasource))
-        open_flag = datasource.open == 1
-        # Column sales has been take np.log1p, so predict take np.expm
-        preds = np.round(np.expm1(predict_fn(datasource[open_flag]).get('predictions').ravel()))
-        base[open_flag] = preds
-        return base
+        return self.service.batch_predict(predict_fn, datasource)
+        # preds = predict_fn(datasource).get('predictions').ravel()
+        # return preds
 
     def online_predict(self, p):
         """

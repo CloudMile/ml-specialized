@@ -49,8 +49,8 @@ class Ctrl(object):
         data = self.input.transform(data, is_serving=True)
         return data
 
-    def train(self, p, reset=True):
-        self.service.train(reset=reset)
+    def train(self, p):
+        self.service.train(model_name=p.model_name, reset=p.reset)
         return self
 
     def upload_model(self, p):
@@ -160,7 +160,7 @@ class Ctrl(object):
         return np.round(np.expm1(predictions.ravel()))
 
     # TODO hack: inspect data
-    def inspect(self, key):
+    def inspect(self, key, encoded_key, typ='deep'):
         model = m.Model(model_dir=self.conf.model_dir)
         train_fn = self.input.generate_input_fn(
             file_names_pattern=self.conf.train_files,
@@ -172,15 +172,29 @@ class Ctrl(object):
 
         feat_data, target = train_fn()
         feat_spec = model.feature.create_feature_columns()
-        dense_data = tf.feature_column.input_layer(feat_data, feat_spec[key])
-        dense_all = tf.feature_column.input_layer(feat_data, list(feat_spec.values()))
-
-        with tf.Session() as sess:
-            tf.global_variables_initializer().run()
-            sess.run(tf.tables_initializer())
-            encoded, origin, feat_data, target_, all_ = sess.run([
-                dense_data, feat_data[key], feat_data, target, dense_all])
-        return encoded, origin, feat_data, target_, all_
+        deep_spec, wide_spec = model.feature.get_deep_and_wide_columns(list(feat_spec.values()))
+        deep_spec = dict(pd.Series(deep_spec).map(lambda e: (e.name, e)).values)
+        wide_spec = dict(pd.Series(wide_spec).map(lambda e: (e.name, e)).values)
+        print(f'deep_spec.keys: {deep_spec.keys()}')
+        print(f'wide_spec.keys: {wide_spec.keys()}')
+        origin = feat_data[key]
+        if typ == 'deep':
+            encoded = tf.feature_column.input_layer(feat_data, deep_spec[encoded_key])
+            dense = tf.feature_column.input_layer(feat_data, list(deep_spec.values()))
+            with tf.Session() as sess:
+                tf.global_variables_initializer().run()
+                sess.run(tf.tables_initializer())
+                origin_, encoded_, all_ = sess.run([origin, encoded, dense])
+            return origin_, encoded_, all_
+        # Wide and deep can't use
+        else:
+            wrap = tf.feature_column.indicator_column(wide_spec[encoded_key])
+            encoded = tf.feature_column.input_layer(feat_data, wrap)
+            with tf.Session() as sess:
+                tf.global_variables_initializer().run()
+                sess.run(tf.tables_initializer())
+                origin_, encoded_ = sess.run([origin, encoded])
+            return origin_, encoded_, None
 
     # TODO hack:
     def get_from_dataset(self, p):

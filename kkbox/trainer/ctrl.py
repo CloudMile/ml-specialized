@@ -16,6 +16,9 @@ class Ctrl(object):
         # self.feature:m.Feature = m.Feature()
         self.input:input.Input = input.Input.instance
 
+        # todo hack
+        from keras.datasets import cifar10
+
     def set_client_secret(self):
         from google.auth import environment_vars
 

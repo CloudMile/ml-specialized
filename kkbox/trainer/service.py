@@ -23,6 +23,10 @@ class Service(object):
             # tf.gfile.DeleteRecursively(self.p.model_dir)
         os.makedirs(self.p.model_dir, exist_ok=True)
 
+        assert model_name in ('dnn', 'neu_mf'), "model_name only support ('dnn', 'neu_mf')"
+        model = m.Model(model_dir=self.p.model_dir) if model_name == 'dnn' else \
+                m.NeuMFModel(model_dir=self.p.neu_mf_model_dir)
+
         sess_config = tf.ConfigProto()
         sess_config.gpu_options.allow_growth = True
         # Turn on XLA JIT compilation
@@ -34,13 +38,9 @@ class Service(object):
             save_checkpoints_steps=self.p.save_checkpoints_steps,
             # save_checkpoints_secs=HYPER_PARAMS.eval_every_secs,
             keep_checkpoint_max=self.p.keep_checkpoint_max,
-            model_dir=self.p.model_dir
+            model_dir=self.p.model_dir if model_name == 'dnn' else self.p.neu_mf_model_dir
         )
 
-        assert model_name in ('dnn', 'neu_mf'), "model_name only support ('dnn', 'neu_mf')"
-
-        model = m.Model(model_dir=self.p.model_dir) if model_name == 'dnn' else \
-                m.NeuMFModel(model_dir=self.p.model_dir)
         self.logger.info(f'Use model {model_name}: {model}')
         self.logger.info(f"Model Directory: {run_config.model_dir}")
 

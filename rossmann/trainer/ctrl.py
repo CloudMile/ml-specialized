@@ -61,7 +61,7 @@ class Ctrl(object):
         """
         from google.cloud import storage
 
-        utils.find_latest_expdir(self.conf)
+        # utils.find_latest_expdir(self.conf)
         bucket = storage.Client().get_bucket(p.bucket_name)
         # clean model dir
         for blob in bucket.list_blobs(prefix=p.prefix):

@@ -16,14 +16,12 @@ class Ctrl(object):
         # self.feature:m.Feature = m.Feature()
         self.input:input.Input = input.Input.instance
 
-        # todo hack
-        from keras.datasets import cifar10
-
     def set_client_secret(self):
         from google.auth import environment_vars
 
         CREDENTIAL_NAME = environment_vars.CREDENTIALS
         os.environ[CREDENTIAL_NAME] = self.p.api_key_path
+        self.logger.info(f'Locate credential path [{self.p.api_key_path}]')
         return self
 
     def prepare(self, p):
@@ -64,7 +62,6 @@ class Ctrl(object):
         """
         from google.cloud import storage
 
-        utils.find_latest_expdir(self.p)
         bucket = storage.Client().get_bucket(p.bucket_name)
         # clean model dir
         for blob in bucket.list_blobs(prefix=p.prefix):
@@ -88,7 +85,6 @@ class Ctrl(object):
         self.service.create_model_ver(ml, p.model_name, p.deployment_uri)
         return self
 
-
     def local_predict(self, p):
         """Read local saved protocol buffer file and do prediction
 
@@ -106,8 +102,6 @@ class Ctrl(object):
             datasource = p.datasource
 
         return self.service.batch_predict(predict_fn, datasource)
-        # preds = predict_fn(datasource).get('predictions').ravel()
-        # return preds
 
     def online_predict(self, p):
         """

@@ -1,29 +1,32 @@
-import random, tensorflow as tf, shutil, os, pandas as pd
+import tensorflow as tf, shutil, os, pandas as pd, numpy as np
 from oauth2client.client import GoogleCredentials
 from googleapiclient import discovery
 from datetime import datetime
 
 from . import app_conf, input, model as m
 from .utils import utils
-random.seed(42)
 
 class Service(object):
     instance = None
     logger = utils.logger(__name__)
 
     def __init__(self):
-        self.p = app_conf.instance
-        self.inp = input.Input.instance
+        self.p: app_conf.Config = app_conf.instance
+        self.inp: input.Input = input.Input.instance
 
     def train(self, train_fn=None, tr_hook=None, valid_fn=None, vl_hook=None,
               reset=True, model_name='dnn'):
-        if reset and tf.gfile.Exists(self.p.model_dir):
-            self.logger.info(f"Delete job_dir {self.p.model_dir} to avoid re-use")
-            shutil.rmtree(self.p.model_dir, ignore_errors=True)
-            # tf.gfile.DeleteRecursively(self.p.model_dir)
-        os.makedirs(self.p.model_dir, exist_ok=True)
+        self.check_model_name(model_name)
+        model_dir = self.p.model_dir if model_name == 'dnn' else self.p.neu_mf_model_dir
 
-        assert model_name in ('dnn', 'neu_mf'), "model_name only support ('dnn', 'neu_mf')"
+        if reset and tf.gfile.Exists(model_dir):
+            self.logger.info(f"Delete job_dir {model_dir} to avoid re-use")
+            shutil.rmtree(model_dir, ignore_errors=True)
+            # tf.gfile.DeleteRecursively(self.p.model_dir)
+        os.makedirs(model_dir, exist_ok=True)
+
+
+        self.logger.info(f"Model: {model_name}, model_dir: {model_dir}")
         model = m.Model(model_dir=self.p.model_dir) if model_name == 'dnn' else \
                 m.NeuMFModel(model_dir=self.p.neu_mf_model_dir)
 
@@ -38,7 +41,7 @@ class Service(object):
             save_checkpoints_steps=self.p.save_checkpoints_steps,
             # save_checkpoints_secs=HYPER_PARAMS.eval_every_secs,
             keep_checkpoint_max=self.p.keep_checkpoint_max,
-            model_dir=self.p.model_dir if model_name == 'dnn' else self.p.neu_mf_model_dir
+            model_dir=model_dir
         )
 
         self.logger.info(f'Use model {model_name}: {model}')
@@ -103,10 +106,48 @@ class Service(object):
         #     estimator.evaluate(valid_fn, steps=10)
         return self
 
+    def find_latest_expdir(self, model_name):
+        self.check_model_name(model_name)
+        model_dir = self.p.neu_mf_model_dir if model_name == 'neu_mf' else self.p.model_dir
+        # Found latest export dir
+        export_dir = f'{model_dir}/export/{self.p.export_name}'
+        return f'{export_dir}/{sorted(os.listdir(export_dir))[-1]}'
+
+    def check_model_name(self, model_name):
+        assert model_name in ('dnn', 'neu_mf'), "model_name only support ('dnn', 'neu_mf')"
+
     def read_transformed(self, fpath):
         data = self.inp.clean(fpath, is_serving=True)
         data = self.inp.prepare(data, is_serving=True)
         return self.inp.transform(data, is_serving=True)
+
+    def batch_predict(self, predict_fn, data, n_batch=1000):
+        assert n_batch <= 1000, 'Prediction batch size must less equal than 1000!'
+
+        multi_cols = self.inp.get_multi_cols(is_serving=True)
+        pad = tf.keras.preprocessing.sequence.pad_sequences
+        dtype = self.inp.get_dtype()
+
+        n_total = len(data)
+        cache = {'idx': -1, 'count': 0}
+        def map_pred_fn(pipe):
+            ret = None
+            if cache['idx'] >= 0:
+                for m_col in multi_cols:
+                    typ = 'int32' if dtype[m_col] == int else 'float32'
+                    pipe[m_col] = list(pad(pipe[m_col], padding='post', dtype=typ))
+
+                ret = predict_fn(pipe.to_dict('list')).get('predictions')
+                cache['count'] += len(pipe)
+                self.logger.info(f'{cache.get("count")}/{n_total} predicted ... ')
+            else:
+                self.logger.info('pandas Apply testing ...')
+            cache['idx'] += 1
+            return ret
+
+        self.logger.info(f'Total {n_total} to predict ...')
+        return np.concatenate(data.groupby(np.arange(len(data)) // n_batch).apply(map_pred_fn), 0)
+
 
     def find_ml(self):
         """GCP ML service

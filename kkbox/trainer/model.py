@@ -18,6 +18,7 @@ class Model(object):
         self.model_dir = model_dir
         # self.feature = Feature.instance
         self.mapper = utils.read_pickle(f'{self.p.fitted_path}/stats.pkl')
+        self.share_emb = True
         pass
 
     def base_features(self, features, label, mode):
@@ -31,8 +32,17 @@ class Model(object):
                     n_unique = len(self.mapper[colname].classes_)
                     self.emb[colname] = self.get_embedding_var(
                         [n_unique, dim], uniform_init_fn, f'emb_{colname}')
-                # For NeuMFModel, try to use different embedding vocabularies
-                self.emb['song_query'] = self.emb['song_id']
+
+                if not self.share_emb:
+                    self.logger.info(f'Split embedding of song_query and song_id!')
+                    # For NeuMFModel, try to use different embedding vocabularies
+                    song_query_len = len(self.mapper['song_id'].classes_)
+                    song_query_emb_dim = metadata.EMB_COLS['song_id']
+                    self.emb['song_query'] = self.get_embedding_var(
+                        [song_query_len, song_query_emb_dim],
+                        uniform_init_fn,
+                        f'emb_song_query'
+                    )
 
         with tf.variable_scope("members") as scope:
             self.city = tf.nn.embedding_lookup(self.emb['city'], features['city'])
@@ -44,8 +54,8 @@ class Model(object):
             self.msno_age_num = features['msno_age_num'][:, tf.newaxis]
             self.msno_tenure = features['msno_tenure'][:, tf.newaxis]
 
-            self.weighted_sum(features, 'song_query', 'msno_pos_query_hist', ['msno_pos_query_count'])
-            self.weighted_sum(features, 'song_query', 'msno_neg_query_hist', ['msno_neg_query_count'])
+            self.weighted_sum(features, 'song_id', 'msno_pos_query_hist', ['msno_pos_query_count'])
+            self.weighted_sum(features, 'song_id', 'msno_neg_query_hist', ['msno_neg_query_count'])
             self.weighted_sum(features, 'artist_name', 'msno_artist_name_hist', ['msno_artist_name_count', 'msno_artist_name_mean'])
             self.weighted_sum(features, 'composer', 'msno_composer_hist', ['msno_composer_count', 'msno_composer_mean'])
             self.weighted_sum(features, 'genre_ids', 'msno_genre_ids_hist', ['msno_genre_ids_count', 'msno_genre_ids_mean'])
@@ -250,21 +260,14 @@ class Model(object):
             self.weighted_sum(features, dict_key, base_key, weighted_key)
         else:
             setattr(self, base_key, tf.nn.embedding_lookup(self.emb[dict_key], features[base_key]))
-            # # todo hack
-            # print(f'self.{base_key}: {getattr(self, base_key)}')
 
             w_key = weighted_key[0]
             setattr(self, w_key,
                     tf.nn.l2_normalize(tf.sequence_mask(features[w_key], dtype=tf.float32), 1)[:, :, tf.newaxis])
-            # # todo hack
-            # print(f'self.{w_key}: {getattr(self, w_key)}')
 
             name = base_key
             val = tf.reduce_sum(getattr(self, base_key) * getattr(self, w_key), 1, name=name)
             setattr(self, name, val)
-            # # todo hack
-            # print(f'self.{name}: {getattr(self, name)}')
-            # print()
 
     def get_embedding_var(self, shape, init_fn, name, zero_first=True):
         if zero_first:
@@ -291,7 +294,6 @@ class Model(object):
 class NeuMFModel(Model):
     def __init__(self, *args, **kwargs):
         super(NeuMFModel, self).__init__(*args, **kwargs)
-        self.share_emb = kwargs.get('share_emb')
 
     def model_fn(self, features, labels, mode):
         is_train = mode == tf.estimator.ModeKeys.TRAIN

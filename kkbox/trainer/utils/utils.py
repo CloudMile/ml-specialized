@@ -40,11 +40,6 @@ def cmd(commands):
         outs.append(decode)
     return ''.join(outs)
 
-def find_latest_expdir(conf):
-    # Found latest export dir
-    export_dir = f'{conf.model_dir}/export/{conf.export_name}'
-    return f'{export_dir}/{sorted(os.listdir(export_dir))[-1]}'
-
 def timestamp():
     return int(datetime.now().timestamp())
 

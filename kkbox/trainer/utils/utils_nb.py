@@ -1,27 +1,43 @@
-import pandas as pd, seaborn as sns, csv
+import pandas as pd, seaborn as sns, re
 
 
 from matplotlib import pyplot as plt
 
-def flat(data, multi_col):
-    """Flat the splitted string multivariate feature with the target
-        - catg1|catg2, 1
-        - catg2|catg3, 0
-               to
-        -   catg1, 1
-        -   catg2, 1
-        -   catg2, 0
-        -   catg3, 0
-    """
-    msno_ary, multi_list, target = [], [], []
-    lens = data[multi_col].map(lambda e: len(e) if type(e) in (list, tuple) else 1)
-    data[multi_col].map(lambda e: multi_list.extend(e) if type(e) in (list, tuple) else multi_list.append(None))
-    def map_fn(tp):
-        msno_ary.extend([tp[1]] * tp[0])
-        target.extend([tp[2]] * tp[0])
+# def flat(data, multi_col):
+#     """Flat the splitted string multivariate feature with the target
+#         - catg1|catg2, 1
+#         - catg2|catg3, 0
+#                to
+#         -   catg1, 1
+#         -   catg2, 1
+#         -   catg2, 0
+#         -   catg3, 0
+#     """
+#     msno_ary, multi_list, target = [], [], []
+#     lens = data[multi_col].map(lambda e: len(e) if type(e) in (list, tuple) else 1)
+#     data[multi_col].map(lambda e: multi_list.extend(e) if type(e) in (list, tuple) else multi_list.append(None))
+#     def map_fn(tp):
+#         msno_ary.extend([tp[1]] * tp[0])
+#         target.extend([tp[2]] * tp[0])
+#
+#     pd.Series(list(zip( lens, data.msno, data.target ))).map(map_fn)
+#     return msno_ary, multi_list, target
 
-    pd.Series(list(zip( lens, data.msno, data.target ))).map(map_fn)
-    return msno_ary, multi_list, target
+def flatten(data, uni_cols:list, m_col, target):
+    sep = '|'
+    series = pd.Series(list(zip(list(data[uni_cols].values),
+                                list(data[m_col].str.split(f'\s*{re.escape(sep)}\s*')),
+                                list(data[target]))))
+
+    def map_fn(e):
+        uni, mul, label = e
+        uni = tuple(uni)
+        cache.extend([uni + (ele, label) for ele in mul])
+
+    columns = uni_cols + [m_col, target]
+    cache = []
+    series.map(map_fn)
+    return pd.DataFrame(columns=columns, data=cache)
 
 
 def univ_boxplot(df, colname):

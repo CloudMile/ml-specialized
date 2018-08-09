@@ -24,9 +24,11 @@ from matplotlib import pyplot as plt
 #     return msno_ary, multi_list, target
 
 def flatten(data, uni_cols:list, m_col, target):
-    sep = '|'
+    # sep = '|'
+    multi = data[m_col].copy()
+    multi.loc[multi.isna()] = multi[multi.isna()].map(lambda e: ('',))
     series = pd.Series(list(zip(list(data[uni_cols].values),
-                                list(data[m_col].str.split(f'\s*{re.escape(sep)}\s*')),
+                                list(multi), #  .str.split(f'\s*{re.escape(sep)}\s*')),
                                 list(data[target]))))
 
     def map_fn(e):
@@ -51,44 +53,64 @@ def univ_boxplot(df, colname):
     plt.show()
 
 
-def multi_catg_heatmap(data, multi_col, col):
-    """Some features are category string, which contains maybe camma splitted,
-     means multiple in a grid, called multivariate feature, so this function provide
-     [univariate feature x multivariate feature] features heatmap with the mean of target
-    """
-    col_ary, multi_list_ary, target = [], [], []
+def heatmap(data, *cols, xtick=None, ytick=None, annot=True, fmt='.2f'):
+    f, axs = plt.subplots(1, 2, figsize=(16, 4))
 
-    lens = data[multi_col].map(lambda e: len(e) if isinstance(e, tuple) else 1)
-    data[multi_col].map(lambda e: multi_list_ary.extend(e) if isinstance(e, tuple) else multi_list_ary.append(None))
-    pd.Series(list(zip(lens, data[col]))).map(lambda tp: col_ary.extend([tp[1]] * tp[0]))
-    pd.Series(list(zip(lens, data.target))).map(lambda tp: target.extend([tp[1]] * tp[0]))
+    def draw(chop, axis):
+        pivot_params = list(cols) + ['target']
+        g = chop.groupby(list(cols)).target
+        mean_ = g.mean().reset_index().pivot(*pivot_params)
+        count_ = g.size().reset_index().pivot(*pivot_params)
+        if xtick is not None or ytick is not None:
+            mean_ = mean_.reindex(index=ytick, columns=xtick)
+            count_ = count_.reindex(index=ytick, columns=xtick)
 
-    df = pd.DataFrame({multi_col: multi_list_ary, col: col_ary, 'target': target})
-    hm = df.groupby([multi_col, col]).target.mean().reset_index(name='target').pivot(multi_col, col, 'target').fillna(0)
-    plt.figure(figsize=(10, 10))
-    sns.heatmap(hm)
+        sns.heatmap(mean_.fillna(0), annot=annot, ax=axis[0], fmt=fmt)
+        sns.heatmap(count_.fillna(0), annot=annot, ax=axis[1], fmt=fmt)
+        axis[0].set_title('mean')
+        axis[1].set_title('count')
+
+    draw(data, axs)
     plt.show()
-    return hm
 
-
-def heatmap(data, *cols, annot=True):
-    f, axs = plt.subplots(1, 3, figsize=(20, 5))
-    col1, col2 = cols[0], cols[1]
-    grp = pd.DataFrame({col1: data[col1].values, col2: data[col2].values, 'target': data.target.values}).groupby(cols)
-
-    pivot_params = list(cols) + ['target']
-    g = data.groupby(cols).target
-    mean_ = g.mean().reset_index().pivot(*pivot_params)
-    count_ = g.size().reset_index().pivot(*pivot_params)
-    sum_ = g.sum().reset_index().pivot(*pivot_params)
-
-    sns.heatmap(mean_.fillna(0), annot=annot, ax=axs[0])
-    sns.heatmap(count_.fillna(0), annot=annot, ax=axs[1])
-    sns.heatmap(sum_.fillna(0), annot=annot, ax=axs[2])
-    axs[0].set_title('mean')
-    axs[1].set_title('count')
-    axs[2].set_title('sum')
-    plt.show()
+# def heatmap(data, *cols, col=None, row=None, xtick=None, ytick=None, annot=True):
+#     col_val, row_val = [0], [0]
+#     if col is not None:
+#         col_val = sorted(data[col].dropna().unique())
+#
+#     if row is not None:
+#         row_val = sorted(data[row].dropna().unique())
+#
+#     f, axs = plt.subplots(len(row_val), len(col_val), figsize=(12 * len(col_val), 8 * len(row_val))) # figsize=(12, 4)
+#
+#     def draw(chop, axis):
+#         pivot_params = list(cols) + ['target']
+#         g = chop.groupby(list(cols)).target
+#         mean_ = g.mean().reset_index().pivot(*pivot_params)
+#         # count_ = g.size().reset_index().pivot(*pivot_params)
+#         if xtick is not None or ytick is not None:
+#             mean_ = mean_.reindex(index=ytick, columns=xtick)
+#             # count_ = count_.reindex(index=ytick, columns=xtick)
+#
+#         sns.heatmap(mean_.fillna(0), annot=annot, ax=axis)
+#         # sns.heatmap(count_.fillna(0), annot=annot, ax=axs[1])
+#         axis.set_title('mean')
+#         # axs[1].set_title('count')
+#
+#     if col is not None and row is not None:
+#         for i, r in enumerate(row_val):
+#             for j, c in enumerate(col_val):
+#                 draw(data.query(f"{row} == '{r}' and {col} == '{c}'"), axs[i, j])
+#     elif row is not None:
+#         for i, r in enumerate(row_val):
+#             draw(data.query(f"{row} == '{r}'"), axs[i])
+#     elif col is not None:
+#         for j, r in enumerate(col_val):
+#             draw(data.query(f"{col} == '{r}'"), axs[j])
+#     else:
+#         draw(data, axs)
+#
+#     plt.show()
 
 # # Because of performance of pandas.to_csv too slow, use this will be greate
 # def to_csv(path, df, header=True):

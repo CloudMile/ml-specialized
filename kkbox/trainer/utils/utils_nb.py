@@ -53,8 +53,9 @@ def univ_boxplot(df, colname):
     plt.show()
 
 
-def heatmap(data, *cols, xtick=None, ytick=None, annot=True, fmt='.2f'):
-    f, axs = plt.subplots(1, 2, figsize=(16, 4))
+def heatmap(data, *cols, xtick=None, ytick=None, annot=True, fmt='.2f', figsize=None):
+    figsize = figsize or (16, 4)
+    f, axs = plt.subplots(1, 2, figsize=figsize)
 
     def draw(chop, axis):
         pivot_params = list(cols) + ['target']

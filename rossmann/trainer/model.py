@@ -39,7 +39,6 @@ class Model(object):
                 config=config
             )
         else:
-
             est = tf.estimator.DNNLinearCombinedRegressor(
                 model_dir=self.model_dir,
                 linear_feature_columns=wide_columns,
@@ -322,18 +321,18 @@ class Feature(object):
             {string: tf.feature_column}: extended feature_column(s) dictionary
         """
         dims = {
-            'state_holiday': 8,
-            'month': 8,
-            'day': 8,
-            'state': 8,
+            'state_holiday': 3,
+            'month': 3,
+            'day': 3,
+            'state': 3,
             'store': 16,
-            'year': 8,
-            'assortment': 8,
-            'store_type': 8,
-            'competition_open_since_month': 8,
-            'competition_open_since_year': 8,
-            'promo2since_week': 8,
-            'promo2since_year': 8
+            'year': 3,
+            'assortment': 3,
+            'store_type': 3,
+            'competition_open_since_month': 3,
+            'competition_open_since_year': 3,
+            'promo2since_week': 3,
+            'promo2since_year': 3
         }
         # Deep columns
         for name in metadata.INPUT_CATEGORICAL_FEATURE_NAMES:

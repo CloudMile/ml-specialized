@@ -318,7 +318,6 @@ class Input(object):
         members = pd.read_pickle(f'{self.p.prepared_path}/members.pkl')
         songs = pd.read_pickle(f'{self.p.prepared_path}/songs.pkl')
         data = data.merge(members, on='msno', how='left').merge(songs, on='song_id', how='left')
-        del members, songs
 
         mapper_dict = {}
         # Categorical univariate features
@@ -336,7 +335,12 @@ class Input(object):
         # Numeric features
         for numeric in metadata.NUMERIC_COLS:
             self.logger.info(f'fit {numeric} ...')
-            mapper_dict[numeric] = utils.NumericMapper(scaler=preprocessing.StandardScaler()).fit(data[numeric])
+            if numeric in ('registration_init_time', 'expiration_date', 'msno_age_num', 'msno_tenure'):
+                mapper_dict[numeric] = utils.NumericMapper(scaler=preprocessing.StandardScaler()).fit(members[numeric])
+            elif numeric in ('song_yy', 'song_length'):
+                mapper_dict[numeric] = utils.NumericMapper(scaler=preprocessing.StandardScaler()).fit(songs[numeric])
+            elif numeric in ('song_pplrty', 'song_clicks'):
+                mapper_dict[numeric] = utils.NumericMapper(scaler=preprocessing.StandardScaler()).fit(data[numeric])
 
         # Persistent the statistic
         utils.write_pickle(f'{self.p.fitted_path}/stats.pkl', mapper_dict)

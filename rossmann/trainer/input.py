@@ -14,8 +14,8 @@ class Input(object):
         self.p = app_conf.instance
         self.feature = m.Feature.instance
         self.serving_fn = {
-            'json': getattr(self, 'json_serving_input_fn'),
-            'csv': getattr(self, 'csv_serving_fn')
+            'json': getattr(self, 'json_serving_input_fn')
+            # 'csv': getattr(self, 'csv_serving_fn')
         }
 
     def clean(self, data, is_serving=False):
@@ -39,7 +39,7 @@ class Input(object):
 
             store_state = pd.read_csv(self.p.store_state, dtype=raw_dtype)
             store_state = store_state.rename(index=str, columns=metadata.HEADER_MAPPING)
-            store_state.to_csv(f'{self.p.cleaned_path}/store_state.csv', index=False)
+            store_state.to_csv(f'{self.p.cleaned_path}/store_states.csv', index=False)
 
             ret = data.rename(index=str, columns=metadata.HEADER_MAPPING)
             fill_empty(ret)
@@ -91,7 +91,7 @@ class Input(object):
 
             # Merge store_state to store and persistent
             self.logger.info(f'Persisten store to {self.p.prepared_path}/store.csv')
-            store_states = pd.read_csv(f'{self.p.cleaned_path}/store_state.csv', dtype=dtype)
+            store_states = pd.read_csv(f'{self.p.cleaned_path}/store_states.csv', dtype=dtype)
             store = store.merge(store_states, on='store', how='left')
             store.to_csv(f'{self.p.prepared_path}/store.csv', index=False)
         else:
@@ -163,7 +163,7 @@ class Input(object):
         :param is_train:
         :return:
         """
-        self.logger.info(f'Prepare start, is_serving: {is_serving}')
+        self.logger.info(f'Transform start, is_serving: {is_serving}')
         s = datetime.now()
 
         dtype = self.get_processed_dtype(is_serving=is_serving)
@@ -236,7 +236,6 @@ class Input(object):
         interval_concat = []
         df.interval.map(interval_concat.extend)
         df['interval'] = np.split(pd.Series(interval_concat).map(map_).values, cut_idx)[:-1]
-
         base[valid_cond] = pd.Series(list(zip(df.month, df.interval))) \
                              .map(lambda row: str(int(row[0] in row[1])))
         return base

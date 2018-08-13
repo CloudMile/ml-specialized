@@ -1,6 +1,9 @@
 import yaml, codecs, logging, os, pandas as pd, pickle
+import seaborn as sns
+
 from logging import config
 from datetime import datetime
+from matplotlib import pyplot as plt
 
 class Logging(object):
     instance = None
@@ -68,3 +71,40 @@ def read_pickle(path):
 def write_pickle(path, obj):
     with open(path, 'wb') as fp:
         pickle.dump(obj, fp)
+
+def heatmap(data, *cols, xtick=None, ytick=None, annot=True, fmt='.2f', figsize=None, label='sales'):
+    figsize = figsize or (16, 4)
+    f, axs = plt.subplots(1, 2, figsize=figsize)
+
+    def draw(chop, axis):
+        pivot_params = list(cols) + [label]
+        g = chop.groupby(list(cols))[label]
+        mean_ = g.mean().reset_index().pivot(*pivot_params)
+        count_ = g.size().reset_index().pivot(*pivot_params)
+        if xtick is not None or ytick is not None:
+            mean_ = mean_.reindex(index=ytick, columns=xtick)
+            count_ = count_.reindex(index=ytick, columns=xtick)
+
+        sns.heatmap(mean_.fillna(0), annot=annot, ax=axis[0], fmt=fmt)
+        sns.heatmap(count_.fillna(0), annot=annot, ax=axis[1], fmt=fmt)
+        axis[0].set_title('mean')
+        axis[1].set_title('count')
+
+    draw(data, axs)
+    plt.show()
+
+# def heatmap(data, *cols, annot=True, fmt='.2f', xtick=None, ytick=None, label='sales'):
+#     pivot_params = list(cols) + [label]
+#     g = data.groupby(list(cols))[label]
+#     mean_ = g.mean().reset_index().pivot(*pivot_params)
+#     count_ = g.size().reset_index().pivot(*pivot_params)
+#     # sum_ = g.sum().reset_index().pivot(*pivot_params)
+#
+#     f, axs = plt.subplots(1, 2, figsize=(16, 4))
+#     sns.heatmap(mean_, annot=annot, fmt=fmt, xtick=xtick, ytick=ytick, ax=axs[0])
+#     sns.heatmap(count_, annot=annot, fmt=fmt, ax=axs[1])
+#     # sns.heatmap(sum_, annot=annot, ax=axs[2])
+#     axs[0].set_title(f'mean')
+#     axs[1].set_title(f'count')
+#     # axs[2].set_title(f'sum')
+#     plt.show()

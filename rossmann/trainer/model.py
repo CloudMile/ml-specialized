@@ -157,11 +157,13 @@ class BestScoreExporter(tf.estimator.Exporter):
                  name,
                  serving_input_receiver_fn,
                  assets_extra=None,
-                 as_text=False):
+                 as_text=False,
+                 model_dir=None):
         self._name = name
         self.serving_input_receiver_fn = serving_input_receiver_fn
         self.assets_extra = assets_extra
         self.as_text = as_text
+        self.model_dir = model_dir
         self.best = self.get_last_eval()
         self._exports_to_keep = 1
         self.export_result = None
@@ -172,7 +174,7 @@ class BestScoreExporter(tf.estimator.Exporter):
         return self._name
 
     def get_last_eval(self):
-        path = f'{app_conf.instance.model_dir}/best.eval'
+        path = f'{self.model_dir}/best.eval'
         if os.path.exists(path):
             return utils.read_pickle(path)
         else:
@@ -180,7 +182,7 @@ class BestScoreExporter(tf.estimator.Exporter):
 
     def save_last_eval(self, best:float):
         self.logger.info(f'Persistent best eval: {best}')
-        path = f'{app_conf.instance.model_dir}/best.eval'
+        path = f'{self.model_dir}/best.eval'
         utils.write_pickle(path, best)
 
     def export(self, estimator, export_path, checkpoint_path, eval_result,

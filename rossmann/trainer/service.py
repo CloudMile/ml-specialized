@@ -1,11 +1,9 @@
-import random, tensorflow as tf, shutil, os, pandas as pd
+import random, tensorflow as tf, shutil, os, pandas as pd, numpy as np
 from oauth2client.client import GoogleCredentials
 from googleapiclient import discovery
 from datetime import datetime
-from pprint import pprint
 
-from . import app_conf, input, model as m, utils
-random.seed(42)
+from . import app_conf, input, model as m, utils, metadata
 
 class Service(object):
     instance = None
@@ -15,21 +13,65 @@ class Service(object):
         self.p :app_conf.Config = app_conf.instance
         self.inp :input.Input = input.Input.instance
 
+    def train_ridge(self):
+        from sklearn.preprocessing import StandardScaler
+        from sklearn.linear_model import Ridge
+
+        tr = self.inp.fill_catg_na(pd.read_csv(app_conf.instance.train_files))
+        vl = self.inp.fill_catg_na(pd.read_csv(app_conf.instance.valid_files))
+        cut_pos = np.cumsum([len(tr), len(vl)]).tolist()
+
+        # Numeric features
+        merge = pd.concat([tr, vl], 0, ignore_index=True)
+        num_feats = merge[metadata.INPUT_NUMERIC_FEATURE_NAMES]
+        num_feats = StandardScaler().fit_transform(num_feats.values)
+        # Categorical features
+        catg_feats = merge[metadata.INPUT_CATEGORICAL_FEATURE_NAMES]
+        catg_feats = pd.get_dummies(catg_feats, columns=metadata.INPUT_CATEGORICAL_FEATURE_NAMES).values
+
+        # Split train, valid data
+        self.logger.info("Split train valid")
+        data = np.c_[num_feats, catg_feats, merge.sales.values[:, None]]
+        tr_x = data[:cut_pos[0]]
+        vl_x = data[cut_pos[0]:cut_pos[1]]
+        tr_x, tr_y = tr_x[:, :-1], tr_x[:, -1]
+        vl_x, vl_y = vl_x[:, :-1], vl_x[:, -1]
+
+        ridge = Ridge(0.5)
+        ridge.fit(tr_x, tr_y)
+
+        def rmspe(label, pred):
+            label, pred = np.expm1(label), np.expm1(pred)
+            return np.sqrt((((label - pred) / label) ** 2).mean())
+
+        def rmse(label, pred):
+            # label, pred = np.expm1(label), np.expm1(pred)
+            return np.sqrt(((label - pred) ** 2).mean())
+
+        tr_pred, vl_pred = ridge.predict(tr_x), ridge.predict(vl_x)
+
+        tr_rmpse = rmspe(tr_y, tr_pred)
+        vl_rmpse = rmspe(vl_y, vl_pred)
+
+        tr_rmse = rmse(tr_y, tr_pred)
+        vl_rmse = rmse(vl_y, vl_pred)
+
+        self.logger.info(f'RMSPE on train data: {tr_rmpse}, valid data: {vl_rmpse}')
+        self.logger.info(f'RMSE on train data: {tr_rmse}, valid data: {vl_rmse}')
+
     def train(self, model_name='deep', reset=True):
-        """Use tf.estimator.DNNRegressor to train model,
-        eval at every epoch end, and export only when best (smallest) loss value occurs,
 
-        :return: Self object
-        """
+        self.check_model_name(model_name)
 
-        assert model_name in ('deep', 'wide_and_deep'), \
-            "model_name only support ('deep', 'wide_and_deep')"
+        if model_name == 'ridge': return self.train_ridge()
 
-        if reset and tf.gfile.Exists(self.p.model_dir):
-            self.logger.info(f"Deleted job_dir {self.p.model_dir} to avoid re-use")
-            shutil.rmtree(self.p.model_dir, ignore_errors=True)
-            # tf.gfile.DeleteRecursively(self.p.model_dir)
-        os.makedirs(self.p.model_dir, exist_ok=True)
+        model_dir = self.p.dnn_model_dir if model_name == 'deep' else self.p.wnd_model_dir
+
+        if reset and tf.gfile.Exists(model_dir):
+            self.logger.info(f"Deleted job_dir {model_dir} to avoid re-use")
+            shutil.rmtree(model_dir, ignore_errors=True)
+
+        os.makedirs(model_dir, exist_ok=True)
 
         sess_config = tf.ConfigProto()
         sess_config.gpu_options.allow_growth = True
@@ -42,17 +84,18 @@ class Service(object):
             # save_checkpoints_steps=self.p.save_checkpoints_steps,
             # save_checkpoints_secs=HYPER_PARAMS.eval_every_secs,
             keep_checkpoint_max=self.p.keep_checkpoint_max,
-            model_dir=self.p.model_dir
+            model_dir=model_dir
         )
 
         self.logger.info(f"Model_name: {model_name}")
         self.logger.info(f"Model directory: {run_config.model_dir}")
-        model = m.Model(model_dir=self.p.model_dir, name=model_name)
+        model = m.Model(model_dir=model_dir, name=model_name)
 
 
         exporter = m.BestScoreExporter(
             self.p.export_name,
             self.inp.serving_fn[self.p.serving_format],
+            model_dir=model_dir,
             as_text=False  # change to true if you want to export the model as readable text
         )
         # Train spec
@@ -101,6 +144,17 @@ class Service(object):
         :return:
         """
         return pd.read_csv(fpath, dtype=self.inp.get_processed_dtype(is_serving=True))
+
+    def find_latest_expdir(self, model_name):
+        self.check_model_name(model_name)
+        model_dir = self.p.dnn_model_dir if model_name == 'deep' else self.p.wnd_model_dir
+        # Found latest export dir
+        export_dir = f'{model_dir}/export/{self.p.export_name}'
+        return f'{export_dir}/{sorted(os.listdir(export_dir))[-1]}'
+
+    def check_model_name(self, model_name):
+        assert model_name in ('deep', 'wide_and_deep', 'ridge'), \
+            "model_name only support ('deep', 'wide_and_deep', 'ridge')"
 
     def find_ml(self):
         """GCP ML service

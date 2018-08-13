@@ -32,7 +32,8 @@ class Config(object):
 
     # Data prepare relevant parameter
     valid_size = 0.3
-    model_dir = f'{model_path}/dnn_regressor_128_64_32_v2'
+    dnn_model_dir = f'{model_path}/dnn_regressor_128_64_32'
+    wnd_model_dir = f'{model_path}/wide_and_deep'
     # Dir name in {model_dir}/export
     export_name = 'estimator'
 
@@ -52,7 +53,7 @@ class Config(object):
     # as_wide_columns = False
 
     # Serving relevant
-    serving_format = 'json' # [json]
+    serving_format = 'json'
 
 instance = Config()
 

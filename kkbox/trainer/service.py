@@ -50,6 +50,7 @@ class Service(object):
         exporter = m.BestScoreExporter(
             self.p.export_name,
             self.inp.serving_fn[self.p.serving_format],
+            model_dir=model_dir,
             as_text=False  # change to true if you want to export the model as readable text
         )
         # Train spec

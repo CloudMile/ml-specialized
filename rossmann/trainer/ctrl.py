@@ -19,6 +19,7 @@ class Ctrl(object):
         from google.auth import environment_vars
 
         CREDENTIAL_NAME = environment_vars.CREDENTIALS
+        self.logger.info(f"Set env variable [{CREDENTIAL_NAME}]")
         os.environ[CREDENTIAL_NAME] = self.conf.api_key_path
         return self
 
@@ -94,7 +95,7 @@ class Ctrl(object):
         """
         from tensorflow.contrib import predictor
 
-        export_dir = utils.find_latest_expdir(self.conf)
+        export_dir = self.service.find_latest_expdir(p.model_name)
         predict_fn = predictor.from_saved_model(export_dir, signature_def_key='predict')
 
         if p.is_src_file:
@@ -161,7 +162,7 @@ class Ctrl(object):
 
     # TODO hack: inspect data
     def inspect(self, key, encoded_key, typ='deep'):
-        model = m.Model(model_dir=self.conf.model_dir)
+        model = m.Model(model_dir=None)
         train_fn = self.input.generate_input_fn(
             file_names_pattern=self.conf.train_files,
             mode=tf.estimator.ModeKeys.TRAIN,

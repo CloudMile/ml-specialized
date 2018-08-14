@@ -29,7 +29,7 @@ class Config(object):
     # Data prepare relevant parameter
     valid_size = 0.1
     model_dir = f'{model_path}/kkbox_dnn_adam_max_norm'
-    neu_mf_model_dir = f'{model_path}/kkbox_neumf_no_share_embedding'
+    neu_mf_model_dir = f'{model_path}/kkbox_neumf_adam_max_norm'
     # Dir name in {model_dir}/export
     export_name = 'estimator'
 

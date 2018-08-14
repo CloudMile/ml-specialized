@@ -19,8 +19,8 @@ class Ctrl(object):
         from google.auth import environment_vars
 
         CREDENTIAL_NAME = environment_vars.CREDENTIALS
-        self.logger.info(f"Set env variable [{CREDENTIAL_NAME}]")
         os.environ[CREDENTIAL_NAME] = self.conf.api_key_path
+        self.logger.info(f"Set env variable [{CREDENTIAL_NAME}]")
         return self
 
     def prepare(self, p):

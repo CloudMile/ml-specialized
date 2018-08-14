@@ -122,34 +122,6 @@ class Service(object):
         data = self.inp.prepare(data, is_serving=True)
         return self.inp.transform(data, is_serving=True)
 
-    def batch_predict(self, predict_fn, data, n_batch=1000):
-        assert n_batch <= 1000, 'Prediction batch size must less equal than 1000!'
-
-        multi_cols = self.inp.get_multi_cols(is_serving=True)
-        pad = tf.keras.preprocessing.sequence.pad_sequences
-        dtype = self.inp.get_dtype()
-
-        n_total = len(data)
-        cache = {'idx': -1, 'count': 0}
-        def map_pred_fn(pipe):
-            ret = None
-            if cache['idx'] >= 0:
-                for m_col in multi_cols:
-                    typ = 'int32' if dtype[m_col] == int else 'float32'
-                    pipe[m_col] = list(pad(pipe[m_col], padding='post', dtype=typ))
-
-                ret = predict_fn(pipe.to_dict('list')).get('predictions')
-                cache['count'] += len(pipe)
-                self.logger.info(f'{cache.get("count")}/{n_total} predicted ... ')
-            else:
-                self.logger.info('pandas Apply testing ...')
-            cache['idx'] += 1
-            return ret
-
-        self.logger.info(f'Total {n_total} to predict ...')
-        return np.concatenate(data.groupby(np.arange(len(data)) // n_batch).apply(map_pred_fn), 0)
-
-
     def find_ml(self):
         """GCP ML service
 
@@ -226,6 +198,52 @@ class Service(object):
         ).execute()
         return res
 
+    def padded_batch(self, data, n_batch=1000, callback=None):
+        assert n_batch <= 1000, 'Prediction batch size must less equal than 1000!'
+
+        multi_cols = self.inp.get_multi_cols(is_serving=True)
+        pad = tf.keras.preprocessing.sequence.pad_sequences
+        dtype = self.inp.get_dtype(is_serving=True)
+
+        n_total = len(data)
+        cache = {'idx': -1, 'count': 0}
+        def map_pred_fn(pipe):
+            ret = None
+            if cache['idx'] >= 0:
+                for m_col in multi_cols:
+                    typ = 'int32' if dtype[m_col] == int else 'float32'
+                    maxlen = pipe[m_col].map(len).max()
+                    # pad(pipe[m_col], padding='post', dtype=typ).tolist()
+                    def pad_fn(tp):
+                        padlen = maxlen - len(tp)
+                        if typ == 'int32':
+                            return tuple(map(int, tp + (0,) * padlen))
+                        else:
+                            return tuple(map(float, tp + (0,) * padlen))
+                    pipe[m_col] = pipe[m_col].map(pad_fn)
+
+                if callback is not None:
+                    ret = callback(pipe)
+                else:
+                    ret = pipe
+                cache['count'] += len(pipe)
+                self.logger.info(f'{cache.get("count")}/{n_total} ... ')
+            else:
+                self.logger.info('pandas apply testing ...')
+            cache['idx'] += 1
+            return ret
+
+        self.logger.info(f'Total {n_total} to predict ...')
+        result = data.groupby(np.arange(len(data)) // n_batch).apply(map_pred_fn)
+
+        # todo hack
+        print(result.shape)
+
+        if isinstance(result, pd.DataFrame):
+            return result
+        else:
+            return np.concatenate(result, 0)
+
     def online_predict(self, datasource, model_name):
         """Online prediction with ML Engine
 
@@ -239,7 +257,6 @@ class Service(object):
         # return data type must be in records mode
         result = ml.projects().predict(name=model_uri, body={'instances': datasource}).execute()
         return [rec.get('predictions')[0] for rec in result.get('predictions')]
-
 
 Service.instance = Service()
 

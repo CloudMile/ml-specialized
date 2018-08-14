@@ -21,7 +21,7 @@ class Ctrl(object):
 
         CREDENTIAL_NAME = environment_vars.CREDENTIALS
         os.environ[CREDENTIAL_NAME] = self.p.api_key_path
-        self.logger.info(f'Locate credential path [{self.p.api_key_path}]')
+        self.logger.info(f"Set env variable [{CREDENTIAL_NAME}]")
         return self
 
     def prepare(self, p):
@@ -34,9 +34,9 @@ class Ctrl(object):
         self.input.split(data)
         del data
 
-        self.input.prepare(f'{self.p.cleaned_path}/tr.pkl', is_serving=True)
+        self.input.prepare(f'{self.p.cleaned_path}/tr.pkl', is_serving=False)
         self.input.fit(f'{self.p.prepared_path}/tr.pkl')
-        self.input.transform(f'{self.p.prepared_path}/tr.pkl', is_serving=True)
+        self.input.transform(f'{self.p.prepared_path}/tr.pkl', is_serving=False)
         return self
 
     def transform(self, p):
@@ -93,7 +93,7 @@ class Ctrl(object):
         """
         from tensorflow.contrib import predictor
 
-        export_dir = utils.find_latest_expdir(self.p)
+        export_dir = self.service.find_latest_expdir(p.model_name)
         predict_fn = predictor.from_saved_model(export_dir, signature_def_key='outputs')
 
         if p.is_src_file:
@@ -101,7 +101,9 @@ class Ctrl(object):
         else:
             datasource = p.datasource
 
-        return self.service.batch_predict(predict_fn, datasource)
+        callback = lambda pipe: predict_fn(pipe.to_dict('list')).get('predictions')
+        return self.service.padded_batch(datasource, callback=callback)
+
 
     def online_predict(self, p):
         """
@@ -109,15 +111,14 @@ class Ctrl(object):
         :param p: p.datasource must be structure as [{}, {} ...]
         :return:
         """
+        self.logger.info(f"Online prediction ...")
         datasource = p.datasource
-        base = np.zeros(len(datasource))
         if not isinstance(datasource, pd.DataFrame):
-            datasource = pd.DataFrame(datasource) # .to_dict('records')
+            datasource = pd.DataFrame(datasource)
 
-        open_flag = datasource.open == 1
-        preds = self.service.online_predict(datasource[open_flag].to_dict('records'), p.model_name)
-        base[open_flag] = np.round(np.expm1(preds))
-        return base
+        datasource = self.service.padded_batch(pd.DataFrame(datasource))
+        records = datasource.to_dict('records')
+        return self.service.online_predict(records, p.model_name)
 
     # TODO: alternative prediction way, use tf.saved_model.loader.load
     def local_predict_alt(self, p):
@@ -131,7 +132,7 @@ class Ctrl(object):
             datasource = self.service.read_transformed(p.datasource)
         else:
             datasource = p.datasource
-        export_dir = utils.find_latest_expdir(self.p)
+        export_dir = self.service.find_latest_expdir(p.model_name)
 
         tf.reset_default_graph()
         with tf.Session(graph=tf.Graph()) as sess:

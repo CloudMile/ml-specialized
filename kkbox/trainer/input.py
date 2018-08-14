@@ -7,7 +7,7 @@ from sklearn import preprocessing
 from datetime import datetime
 
 from . import metadata, model as m, app_conf
-from .utils import utils, utils_nb
+from .utils import utils
 
 
 def sep_fn(e):
@@ -111,13 +111,16 @@ class Input(object):
         self.logger.info(f'Split take time {datetime.now() - s}')
         return tr, vl
 
+    def flatten(self, data, uni_cols:list, m_col, target):
+        from .utils import utils_nb
+        return utils_nb.flatten(data, uni_cols, m_col, target)
+
     def msno_statis(self, data, col, to_calc, base_msno, is_multi=False):
         s = datetime.now()
         label_name = f'msno_{col}_hist'
         calc_names = [f'msno_{col}_{calc}' for calc in to_calc]
         if is_multi:
-            msno, multi, target = utils_nb.flat(data, col)
-            data = pd.DataFrame({'msno': msno, col: multi, 'target': target})
+            data = self.flatten(data, ['msno'], col, 'target')
 
         series = data.groupby(['msno', col]).target.agg(to_calc).reset_index()
 
@@ -140,8 +143,8 @@ class Input(object):
         label_name = f'song_{col}_hist'
         calc_names = [f'song_{col}_{calc}' for calc in to_calc]
         if is_multi:
-            song, multi, target = utils_nb.flat(data, col)
-            data = pd.DataFrame({'song': song, col: multi, 'target': target})
+            data = self.flatten(data, ['song_id'], col, 'target')
+
         series = data.groupby(['song_id', col]).target.agg(to_calc).reset_index()
 
         def map_fn(pipe):
@@ -179,8 +182,10 @@ class Input(object):
         else:
             members = pd.read_pickle(f'{self.p.cleaned_path}/members.pkl')
             songs = pd.read_pickle(f'{self.p.cleaned_path}/songs.pkl')
+
             self.logger.info(f'\nDo prepare_members')
             members = self.prepare_members(data, members, songs)
+
             self.logger.info(f'\nDo prepare_songs')
             songs = self.prepare_songs(data, members, songs)
 

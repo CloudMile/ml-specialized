@@ -212,15 +212,15 @@ class Service(object):
             if cache['idx'] >= 0:
                 for m_col in multi_cols:
                     typ = 'int32' if dtype[m_col] == int else 'float32'
-                    maxlen = pipe[m_col].map(len).max()
-                    # pad(pipe[m_col], padding='post', dtype=typ).tolist()
-                    def pad_fn(tp):
-                        padlen = maxlen - len(tp)
-                        if typ == 'int32':
-                            return tuple(map(int, tp + (0,) * padlen))
-                        else:
-                            return tuple(map(float, tp + (0,) * padlen))
-                    pipe[m_col] = pipe[m_col].map(pad_fn)
+
+                    # maxlen = pipe[m_col].map(len).max()
+                    # def pad_fn(tp):
+                    #     padlen = maxlen - len(tp)
+                    #     if typ == 'int32':
+                    #         return tuple(map(int, tp + (0,) * padlen))
+                    #     else:
+                    #         return tuple(map(float, tp + (0,) * padlen))
+                    pipe[m_col] = pad(pipe[m_col], padding='post', dtype=typ).tolist()
 
                 if callback is not None:
                     ret = callback(pipe)
@@ -235,9 +235,6 @@ class Service(object):
 
         self.logger.info(f'Total {n_total} to predict ...')
         result = data.groupby(np.arange(len(data)) // n_batch).apply(map_pred_fn)
-
-        # todo hack
-        print(result.shape)
 
         if isinstance(result, pd.DataFrame):
             return result

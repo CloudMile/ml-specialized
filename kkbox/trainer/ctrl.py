@@ -97,9 +97,9 @@ class Ctrl(object):
         predict_fn = predictor.from_saved_model(export_dir, signature_def_key='outputs')
 
         if p.is_src_file:
-            datasource = self.service.read_transformed(p.datasource)
-        else:
             datasource = p.datasource
+        else:
+            datasource = self.service.read_transformed(p.datasource)
 
         callback = lambda pipe: predict_fn(pipe.to_dict('list')).get('predictions')
         return self.service.padded_batch(datasource, callback=callback)
@@ -116,7 +116,7 @@ class Ctrl(object):
         if not isinstance(datasource, pd.DataFrame):
             datasource = pd.DataFrame(datasource)
 
-        datasource = self.service.padded_batch(pd.DataFrame(datasource))
+        datasource = self.service.padded_batch(datasource)
         records = datasource.to_dict('records')
         return self.service.online_predict(records, p.model_name)
 
@@ -129,26 +129,29 @@ class Ctrl(object):
         :return:
         """
         if p.is_src_file:
-            datasource = self.service.read_transformed(p.datasource)
-        else:
             datasource = p.datasource
+        else:
+            datasource = self.service.read_transformed(p.datasource)
+
+        if not isinstance(datasource, pd.DataFrame):
+            datasource = pd.DataFrame(datasource)
+
         export_dir = self.service.find_latest_expdir(p.model_name)
 
         tf.reset_default_graph()
         with tf.Session(graph=tf.Graph()) as sess:
             tf.saved_model.loader.load(sess, [tf.saved_model.tag_constants.SERVING], export_dir)
             # Json serving input
-            feed_dict = {
-                f'{k}:0': v
-                for k, v in datasource.to_dict('list').items()}
-            predictions = sess.run(sess.graph.get_tensor_by_name('dnn/logits/BiasAdd:0'),
-                                   feed_dict=feed_dict)
+            predictions = []
+            def callback(pipe):
+                feed_dict = {
+                    f'{k}:0': v
+                    for k, v in pipe.to_dict('list').items()}
+                return sess.run(sess.graph.get_tensor_by_name('concatenate/Sigmoid:0'),
+                                feed_dict=feed_dict)
+                # predictions.extend(pred.ravel())
 
-            # CSV serving input
-            # feed_dict = { 'file_name_pattern:0': ['./data/test.csv'] }
-            # predictions = sess.run(sess.graph.get_tensor_by_name('dnn/logits/BiasAdd:0'), feed_dict=feed_dict)
-
-        return np.round(np.expm1(predictions.ravel()))
+            return self.service.padded_batch(datasource, callback=callback)
 
     # TODO hack: inspect data
     def inspect(self, key):

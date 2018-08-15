@@ -9,7 +9,9 @@ Rossmann Data是與時間序列有關的Data, 需要預測每間商店未來六�
 - From kaggle [Rossmann](https://www.kaggle.com/c/rossmann-store-sales)
 - See the [rossman.ipynb](rossmann/rossman.ipynb) for details
 
-### Custom tf.estimator.Estimator for KKBOX Music Recommendation Engine
+## Custom tf.estimator.Estimator for KKBOX Music Recommendation Engine
+
+KKBOX data是recommendation的挑戰, 幸運的是label已經有負向資料, 1:喜歡, 0:不喜歡(KKBOX有自己的定義去label資料), 看看您是否能精準達到個人化推薦或是CTR的預測
 
 - Music Personalize Recommendation, here because of the target column is binary, we take this as a classification problem, in a nutshell, this is a binary classification.
 - From kaggle [WSDM - KKBox's Music Recommendation Challenge](https://www.kaggle.com/c/kkbox-music-recommendation-challenge/data)

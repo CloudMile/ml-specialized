@@ -2,7 +2,7 @@
 
 CloudMile project for google ml-specialist 
 
-## DNNRegressor on Rossmann data 
+## DNNRegressor/DNNLinearCombinedRegressor on Rossmann data 
 
 Rossmann Data是與時間序列有關的Data, 需要預測每間商店未來六個禮拜的銷售額, 最大的挑戰是您的Model是否能夠有能力去抓到個別商店的平均銷售額以及週期性, 季節性的Information
 
@@ -37,7 +37,6 @@ Rossmann Data是與時間序列有關的Data, 需要預測每間商店未來六�
     - data: gs://ml-specialized/kkbox/data
         ```
         │  members.csv
-        │  sample_submission.csv
         │  songs.csv
         │  song_extra_info.csv
         │  test.csv

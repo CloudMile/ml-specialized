@@ -198,48 +198,33 @@ class Service(object):
         ).execute()
         return res
 
-    def padded_batch(self, data, n_batch=1000, callback=None):
+    def padded_batch(self, data, n_batch=1000):
         assert n_batch <= 1000, 'Prediction batch size must less equal than 1000!'
 
         multi_cols = self.inp.get_multi_cols(is_serving=True)
         pad = tf.keras.preprocessing.sequence.pad_sequences
         dtype = self.inp.get_dtype(is_serving=True)
+        lens = len(data)
+        mod = lens % n_batch
+        batch_count = int( lens // n_batch )
+        indices = [0] + [n_batch] * batch_count
+        if mod != 0:
+            indices.append(mod)
 
-        n_total = len(data)
-        cache = {'idx': -1, 'count': 0}
-        def map_pred_fn(pipe):
-            ret = None
-            if cache['idx'] >= 0:
-                for m_col in multi_cols:
-                    typ = 'int32' if dtype[m_col] == int else 'float32'
+        indices = np.cumsum(indices)
+        for pos in np.arange(len(indices) - 1):
+            s = datetime.now()
+            start, nxt = indices[pos], indices[pos + 1]
+            pipe = data[start:nxt].copy()
 
-                    # maxlen = pipe[m_col].map(len).max()
-                    # def pad_fn(tp):
-                    #     padlen = maxlen - len(tp)
-                    #     if typ == 'int32':
-                    #         return tuple(map(int, tp + (0,) * padlen))
-                    #     else:
-                    #         return tuple(map(float, tp + (0,) * padlen))
-                    pipe[m_col] = pad(pipe[m_col], padding='post', dtype=typ).tolist()
+            for m_col in multi_cols:
+                typ = 'int32' if dtype[m_col] == int else 'float32'
+                pipe[m_col] = pad(pipe[m_col], padding='post', dtype=typ).tolist()
 
-                if callback is not None:
-                    ret = callback(pipe)
-                else:
-                    ret = pipe
-                cache['count'] += len(pipe)
-                self.logger.info(f'{cache.get("count")}/{n_total} ... ')
-            else:
-                self.logger.info('pandas apply testing ...')
-            cache['idx'] += 1
-            return ret
+            self.logger.info(f"padded_batch take time: {datetime.now() - s}")
+            yield pipe
 
-        self.logger.info(f'Total {n_total} to predict ...')
-        result = data.groupby(np.arange(len(data)) // n_batch).apply(map_pred_fn)
 
-        if isinstance(result, pd.DataFrame):
-            return result
-        else:
-            return np.concatenate(result, 0)
 
     def online_predict(self, datasource, model_name):
         """Online prediction with ML Engine

@@ -58,3 +58,6 @@ class Config(object):
 
 instance = Config()
 
+import tensorflow as tf
+
+

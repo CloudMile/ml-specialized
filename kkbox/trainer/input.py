@@ -113,6 +113,7 @@ class Input(object):
 
     def flatten(self, data, uni_cols:list, m_col, target):
         from .utils import utils_nb
+
         return utils_nb.flatten(data, uni_cols, m_col, target)
 
     def msno_statis(self, data, col, to_calc, base_msno, is_multi=False):
@@ -125,8 +126,8 @@ class Input(object):
         series = data.groupby(['msno', col]).target.agg(to_calc).reset_index()
 
         def map_fn(pipe):
-            ret = {label_name: tuple(sorted(pipe[col]))}
-            ret.update({f'msno_{col}_{calc}': tuple(sorted(pipe[calc])) for calc in to_calc})
+            ret = {label_name: tuple(pipe[col])}
+            ret.update({f'msno_{col}_{calc}': tuple(pipe[calc]) for calc in to_calc})
             return ret
 
         series = series.groupby('msno').apply(map_fn).reindex(base_msno)
@@ -148,8 +149,8 @@ class Input(object):
         series = data.groupby(['song_id', col]).target.agg(to_calc).reset_index()
 
         def map_fn(pipe):
-            ret = {label_name: tuple(sorted(pipe[col]))}
-            ret.update({f'song_{col}_{calc}': tuple(sorted(pipe[calc])) for calc in to_calc})
+            ret = {label_name: tuple(pipe[col])}
+            ret.update({f'song_{col}_{calc}': tuple(pipe[calc]) for calc in to_calc})
             return ret
 
         series = series.groupby('song_id').apply(map_fn).reindex(base_song)

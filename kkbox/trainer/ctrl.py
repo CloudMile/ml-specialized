@@ -1,5 +1,5 @@
-import tensorflow as tf, numpy as np, os
-import pandas as pd
+import tensorflow as tf, os, pandas as pd
+from datetime import datetime
 
 from . import app_conf, service, input
 from . import model as m
@@ -101,9 +101,14 @@ class Ctrl(object):
         else:
             datasource = self.service.read_transformed(p.datasource)
 
-        callback = lambda pipe: predict_fn(pipe.to_dict('list')).get('predictions')
-        return self.service.padded_batch(datasource, callback=callback)
-
+        # callback = lambda pipe: predict_fn(pipe.to_dict('list')).get('predictions')
+        predictions = []
+        count, n_total = 0, len(datasource)
+        for pipe in self.service.padded_batch(datasource):
+            predictions.extend(predict_fn(pipe.to_dict('list')).get('predictions').ravel())
+            count += len(pipe)
+            self.logger.info(f"{count}/{n_total} ...")
+        return predictions
 
     def online_predict(self, p):
         """
@@ -116,7 +121,7 @@ class Ctrl(object):
         if not isinstance(datasource, pd.DataFrame):
             datasource = pd.DataFrame(datasource)
 
-        datasource = self.service.padded_batch(datasource)
+        datasource = list(self.service.padded_batch(datasource))[0]
         records = datasource.to_dict('records')
         return self.service.online_predict(records, p.model_name)
 
@@ -137,21 +142,23 @@ class Ctrl(object):
             datasource = pd.DataFrame(datasource)
 
         export_dir = self.service.find_latest_expdir(p.model_name)
-
+        n_total, count = len(datasource), 0
         tf.reset_default_graph()
         with tf.Session(graph=tf.Graph()) as sess:
             tf.saved_model.loader.load(sess, [tf.saved_model.tag_constants.SERVING], export_dir)
-            # Json serving input
             predictions = []
-            def callback(pipe):
+            # Json serving input
+            for pipe in self.service.padded_batch(datasource):
+                s = datetime.now()
                 feed_dict = {
                     f'{k}:0': v
                     for k, v in pipe.to_dict('list').items()}
-                return sess.run(sess.graph.get_tensor_by_name('concatenate/Sigmoid:0'),
+                pred = sess.run(sess.graph.get_tensor_by_name('dnn/pred:0'),
                                 feed_dict=feed_dict)
-                # predictions.extend(pred.ravel())
-
-            return self.service.padded_batch(datasource, callback=callback)
+                count += len(pipe)
+                self.logger.info(f"{count}/{n_total} ...")
+                predictions.extend(pred.ravel())
+        return predictions
 
     # TODO hack: inspect data
     def inspect(self, key):

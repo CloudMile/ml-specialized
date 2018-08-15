@@ -290,7 +290,6 @@ class Model(object):
             self.logger.warn(e)
         return est
 
-
 class NeuMFModel(Model):
     def __init__(self, *args, **kwargs):
         super(NeuMFModel, self).__init__(*args, **kwargs)

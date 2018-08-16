@@ -82,10 +82,12 @@ class Ctrl(object):
     def train(self, p):
         """Simple call service.train
 
-        :param p:
+        :param p: Parameters
+          - reset: If True empty the training model directory
+          - model_name: Specify which model to train
         :return:
         """
-        self.service.train()
+        self.service.train(reset=p.reset, model_name=p.model_name)
         return self
 
     def upload_model(self, p):

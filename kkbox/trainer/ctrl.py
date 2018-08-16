@@ -6,8 +6,10 @@ from . import model as m
 from .utils import utils
 
 class Ctrl(object):
+    """
+
+    """
     instance = None
-    app_dir = ''
     logger = utils.logger(__name__)
 
     def __init__(self):
@@ -17,6 +19,11 @@ class Ctrl(object):
         self.input:input.Input = input.Input.instance
 
     def set_client_secret(self):
+        """Set environment variable to api key path in order to
+          access GCP service
+
+        :return: self
+        """
         from google.auth import environment_vars
 
         CREDENTIAL_NAME = environment_vars.CREDENTIALS
@@ -25,9 +32,29 @@ class Ctrl(object):
         return self
 
     def prepare(self, p):
-        """
+        """Do all data pipeline from raw data to the format model recognized
+          - Clean:
+            - Fill missing value, drop unnecessary features
 
-        :param p:
+          - Split: split train data to train part and valid part to avoid overfitting
+
+          - Prepare:
+            - Join store and store_states to make the **Fat table**
+            - Add features we mentioned in data exploration, drop also.
+            - Filter some records not appropriate, like open = 0
+            - Maybe persistent some files
+
+          - Fit:
+            - Persistent the statistical information of numeric features
+            - Persistent the unique count value of categorical features
+
+          - Transform:
+            - Numeric data normalization
+            - Make all categorical variable to int, one hot encoding ... etc.
+            - Because of the scale of sales is large and large standard deviation, **we take logarithm of the target column**
+
+        :param p: Parameters
+          - fpath: training file path
         :return:
         """
         data = self.input.clean(p.fpath, is_serving=False)
@@ -40,9 +67,11 @@ class Ctrl(object):
         return self
 
     def transform(self, p):
-        """Transform future input data
+        """Transform future input data, just like training period, clean -> prepare -> transform
+          but not fit
 
-        :param p: config params
+        :param p: Parameters
+          - fpath: training file path
         :return:
         """
         data = self.input.clean(p.fpath, is_serving=True)
@@ -51,13 +80,19 @@ class Ctrl(object):
         return data
 
     def train(self, p):
+        """Simple call service.train
+
+        :param p:
+        :return:
+        """
         self.service.train()
         return self
 
     def upload_model(self, p):
-        """
+        """Upload trained model to GCP ML-Engine
 
-        :param p:
+        :param p: Parameters
+          - bucket_name: GCS unique bucket name
         :return:
         """
         from google.cloud import storage
@@ -107,7 +142,8 @@ class Ctrl(object):
         for pipe in self.service.padded_batch(datasource):
             predictions.extend(predict_fn(pipe.to_dict('list')).get('predictions').ravel())
             count += len(pipe)
-            self.logger.info(f"{count}/{n_total} ...")
+            if count % 10000 == 0:
+                self.logger.info(f"{count}/{n_total} ...")
         return predictions
 
     def online_predict(self, p):

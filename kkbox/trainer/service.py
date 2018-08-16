@@ -101,10 +101,6 @@ class Service(object):
             train_spec,
             eval_spec
         )
-        # estimator = model.get_estimator(run_config)
-        # for epoch in range(10):
-        #     estimator.train(train_fn, steps=10)
-        #     estimator.evaluate(valid_fn, steps=10)
         return self
 
     def find_latest_expdir(self, model_name):
@@ -221,7 +217,7 @@ class Service(object):
                 typ = 'int32' if dtype[m_col] == int else 'float32'
                 pipe[m_col] = pad(pipe[m_col], padding='post', dtype=typ).tolist()
 
-            self.logger.info(f"padded_batch take time: {datetime.now() - s}")
+            # self.logger.info(f"padded_batch take time: {datetime.now() - s}")
             yield pipe
 
 

@@ -7,6 +7,20 @@ from datetime import datetime, timedelta
 from . import metadata, model as m, app_conf, utils
 
 class Input(object):
+    """Handle all logic about data pipeline.
+
+    Training period: Clean -> Prepare -> Fit -> Transform -> Split
+    Serving period: Clean -> Prepare -> Transform
+
+    In clean step do missing value imputing, maybe some data transformation to string features.
+    In prepare step do raw data transformation, add features and drop useless features
+    In fit step remember the statistical information about numeric data, label mapping about categorical data,
+      and all other information to persistent for serving needed.
+    In transform steps, transform all features to numeric, like normalize numeric features,
+      embedding or one hot encoding categorical features.
+    In Split step simple split data to train and valid data, split rule is according to the data,
+      usually random split to avoiding model overfitting, here we split by history logs of each user.
+    """
     instance = None
     logger = utils.logger(__name__)
 
@@ -19,6 +33,12 @@ class Input(object):
         }
 
     def clean(self, data, is_serving=False):
+        """Missing value imputing, maybe some data transformation to string features.
+
+        :param data: Input data, maybe DataFrame or simple file path string
+        :param is_serving: True: train or eval period, False: serving period
+        :return: Cleaned data
+        """
         self.logger.info(f'Clean start, is_serving: {is_serving}')
         s = datetime.now()
         raw_dtype = dict(zip(metadata.RAW_HEADER, metadata.RAW_DTYPES))
@@ -52,6 +72,12 @@ class Input(object):
         return ret
 
     def prepare(self, data, is_serving=False):
+        """Raw data transformation, add features and drop useless features.
+
+        :param data: Cleaned data with DataFrame type
+        :param is_serving: True: train or eval period, False: serving period
+        :return: Prepared data with DataFrame type
+        """
         self.logger.info(f'Prepare start, is_serving: {is_serving}')
         s = datetime.now()
 
@@ -104,10 +130,7 @@ class Input(object):
         data['day'] = dt.dt.day.map(str)
         merge = data.merge(store, how='left', on='store')
 
-        # Calculate real promo2 happened timing, promo2 have periodicity per year,
-        # e.g: if PromoInterval = 'Jan,Apr,Jul,Oct', means month in 1, 4, 7, 10 in every year will
-        # have another promotion on some products, so it need to drop origin Promo2
-        # and recalculate if has any promotion
+        # Calculate real promo2 happened timing
         merge['promo2'] = self.cal_promo2(merge)
         merge = merge.drop('promo_interval', 1)
 
@@ -135,10 +158,11 @@ class Input(object):
         return merge
 
     def fit(self, data):
-        """
+        """Remember the statistical information about numeric data, label mapping about categorical data,
+          and all other information to persistent for serving needed.
 
-        :param data:
-        :return:
+        :param data: Cleaned and prepared data with DataFrame type
+        :return: self
         """
         stats = defaultdict(defaultdict)
         numeric_feature_names = metadata.INPUT_NUMERIC_FEATURE_NAMES + metadata.CONSTRUCTED_NUMERIC_FEATURE_NAMES
@@ -155,13 +179,14 @@ class Input(object):
         return self
 
     def transform(self, data, is_serving=False):
-        """Transform columns value, maybe include categorical column to int, numeric column normalize...,
+        """Transform all features to numeric, like normalize numeric features,
+          embedding or one hot encoding categorical features,
           but in this case, we leave it to tf.feature_columns package, only do `np.log1p(target)` here
           for the sake of shrinking scale of sales
 
-        :param data:
-        :param is_train:
-        :return:
+        :param data: Cleaned, fitted and prepared data with DataFrame type
+        :param is_serving: True: train or eval period, False: serving period
+        :return: Transformed data with DataFrame type
         """
         self.logger.info(f'Transform start, is_serving: {is_serving}')
         s = datetime.now()
@@ -184,16 +209,18 @@ class Input(object):
         return data
 
     def fill_catg_na(self, data):
+        """Fill empty string value to categorical feature."""
         for col in data.columns:
             if col in metadata.INPUT_CATEGORICAL_FEATURE_NAMES:
                 data[col].fillna('', inplace=True)
         return data
 
     def split(self, data):
-        """Merged training data
+        """Only necessary in training period, here we split by history logs of each store,
+          take latest 30 percent to valid data.
 
-        :param data:
-        :return:
+        :param data: Train data for split
+        :return: tuple of (train part, valid part)
         """
         self.logger.info(f'Split start')
         s = datetime.now()
@@ -223,6 +250,14 @@ class Input(object):
         return self
 
     def cal_promo2(selfself, merge):
+        """Calculate real promo2 happened timing, promo2 have periodicity per year,
+          e.g: if PromoInterval = 'Jan,Apr,Jul,Oct', means month in 1, 4, 7, 10 in every year will
+          have another promotion on some products, so it need to drop origin Promo2
+          and recalculate if has any promotion.
+
+        :param merge: Merged data(train tables + store tables)
+        :return: `promo2` feature data with pandas.Series type
+        """
         map_ = {'Jan': '1', 'Feb': '2', 'Mar': '3', 'Apr': '4',
                 'May': '5', 'Jun': '6', 'Jul': '7', 'Aug': '8',
                 'Sept': '9', 'Oct': '10', 'Nov': '11', 'Dec': '12'}
@@ -241,6 +276,11 @@ class Input(object):
         return base
 
     def get_processed_dtype(self, is_serving=False):
+        """Get data type of processed data
+
+        :param is_serving: True: train or eval period, False: serving period
+        :return: Dictionary object (label -> data type)
+        """
         header = metadata.HEADER if not is_serving else metadata.SERVING_COLUMNS
         columns = metadata.HEADER_DEFAULTS if not is_serving else metadata.SERVING_DEFAULTS
         return dict(zip(
@@ -290,6 +330,11 @@ class Input(object):
         return features
 
     def json_serving_input_fn(self):
+        """Declare the serving specification, what data format should receive and how to transform to
+          put in model.
+
+        :return: `tf.estimator.export.ServingInputReceiver` object
+        """
         self.logger.info(f'use json_serving_input_fn !')
 
         feat_obj = m.Feature.instance
@@ -303,15 +348,6 @@ class Input(object):
             else:
                 inputs[column.name] = tf.placeholder(shape=[None], dtype=column.dtype, name=column.name)
 
-        # dtype = self.get_processed_dtype(is_serving=True)
-        # mappiing = {str: tf.string, int: tf.int32, float: tf.float32}
-        #
-        # inputs = {}
-        # for name, column in feat_cols.items():
-        #     # print(f'name: {name}, column: {column}')
-        #     # inputs[name] = tf.placeholder(shape=[None], dtype=column.dtype, name=name)
-        #     inputs[name] = tf.placeholder(shape=[None], dtype=mappiing[dtype[name]], name=name)
-
         features = {
             key: tf.expand_dims(tensor, -1)
             for key, tensor in inputs.items()
@@ -320,52 +356,6 @@ class Input(object):
         return tf.estimator.export.ServingInputReceiver(
             features=self.process_features(features),
             receiver_tensors=inputs
-        )
-
-    def csv_serving_fn(self):
-        """This function still have problem to solve, currently just use json_serving_input_fn will be great.
-
-        :return:
-        """
-        self.logger.info(f'use csv_serving_fn !')
-
-        file_name_pattern = tf.placeholder(shape=[None], dtype=tf.string, name='file_name_pattern')
-
-        # feat_obj = m.Feature.instance
-        # feat_cols = feat_obj.create_feature_columns()
-        # dtype = self.get_dtype(is_train=False)
-        # mappiing = {str: tf.string, int: tf.int32, float: tf.float32}
-        # inputs = {}
-        # for name, column in feat_cols.items():
-        #     # print(f'name: {name}, column: {column}')
-        #     # inputs[name] = tf.placeholder(shape=[None], dtype=column.dtype, name=name)
-        #     inputs[name] = tf.placeholder(shape=[None], dtype=mappiing[dtype[name]], name=name)
-        #
-        # features = {
-        #     key: tf.expand_dims(tensor, -1)
-        #     for key, tensor in inputs.items()
-        # }
-
-        # serv_hook = IteratorInitializerHook()
-        # inputs, _ = self.generate_input_fn(file_name_pattern, hooks=[serv_hook])()
-        #
-        # features = {
-        #     key: tf.expand_dims(tensor, -1)
-        #     for key, tensor in inputs.items()
-        # }
-
-        features = self.parse_csv(file_name_pattern, is_serving=True)
-
-        unused_features = list(
-            set(metadata.SERVING_COLUMNS) - set(metadata.INPUT_FEATURE_NAMES) - {metadata.TARGET_NAME})
-
-        # Remove unused columns (if any)
-        for column in unused_features:
-            features.pop(column, None)
-
-        return tf.estimator.export.ServingInputReceiver(
-            features=self.process_features(features),
-            receiver_tensors={'file_name_pattern': file_name_pattern}
         )
 
     def get_features_target_tuple(self, features):
@@ -397,13 +387,11 @@ class Input(object):
         Takes a rank-1 tensor and converts it into rank-2 tensor, with respect to its data type
         (inferred from the metadata)
 
-        Args:
-            csv_row: rank-2 tensor of type string (csv)
-            is_serving: boolean to indicate whether this function is called during serving or training
-            since the serving csv_row input is different than the training input (i.e., no target column)
-        Returns:
-            rank-2 tensor of the correct data type
+        :param csv_row: Rank-2 tensor of type string (csv)
+        :param is_serving: True: train or eval period, False: serving period
+        :return: rank-2 tensor of the correct data type
         """
+
         self.logger.info(f'is_serving: {is_serving}')
         if is_serving:
             column_names = metadata.SERVING_COLUMNS

@@ -1,18 +1,17 @@
-import tensorflow as tf, os, shutil, re
-from tensorflow.python.feature_column import feature_column
+import tensorflow as tf, os, shutil
 from tensorflow.contrib.nn import alpha_dropout
-from pprint import pprint
 
 from . import app_conf, input, metadata
 from .utils import utils, flex
 
 class Model(object):
+    """DNN model for kkbox music recommendation"""
     logger = utils.logger(__name__)
 
     def __init__(self, model_dir):
         """
 
-        :param model_dir:
+        :param model_dir: Model checkpoint directory path
         """
         self.p = app_conf.instance
         self.model_dir = model_dir
@@ -22,9 +21,17 @@ class Model(object):
         pass
 
     def base_features(self, features, label, mode):
+        """Handle graph about all kind of variables initialization, weighted sum of all features and relevant
+          weights, concat features of members, songs
+
+        :param features: Dictionary object include all input feature
+        :param label: Reserve for refactor
+        :param mode: Reserve for refactor
+        :return: None
+        """
         with tf.variable_scope("init", reuse=tf.AUTO_REUSE) as scope:
             uniform_init_fn = tf.glorot_uniform_initializer()
-            self.b_global = tf.Variable(uniform_init_fn(shape=[]), name="b_global")
+            # self.b_global = tf.Variable(uniform_init_fn(shape=[]), name="b_global")
             # Embedding init
             with tf.variable_scope("embedding"):
                 self.emb = {}
@@ -133,6 +140,14 @@ class Model(object):
             self.logger.info(f'self.context_features: {self.context_features}')
 
     def factor_encode(self, uniform_init_fn, has_context=True, mode=None, name='factor_mlp'):
+        """Encode the concatenated features of members, songs, context, with fully connected layer
+
+        :param uniform_init_fn: Initialization function
+        :param has_context: Whether to handle context feature
+        :param mode: The execution mode, as defined in tf.estimator.ModeKeys.
+        :param name: Tensor name
+        :return: Tensor list
+        """
         is_train = mode == tf.estimator.ModeKeys.TRAIN
         ret = []
         with tf.variable_scope(name):
@@ -152,6 +167,13 @@ class Model(object):
         return ret
 
     def model_fn(self, features, labels, mode):
+        """Implement model graph
+
+        :param features: A dictionary of tensors keyed by the feature name.
+        :param labels: A tensor representing the labels
+        :param mode: The execution mode, as defined in tf.estimator.ModeKeys.
+        :return: `tf.estimator.EstimatorSpec`
+        """
         is_train = mode == tf.estimator.ModeKeys.TRAIN
         self.logger.info(f'mode: {mode}, is_train: {is_train}, use dropout: {is_train and self.p.drop_rate > 0}')
 
@@ -225,13 +247,13 @@ class Model(object):
 
     def weighted_sum(self, features, dict_key, base_key, weighted_key: list):
         """Do weighted sum to multivariate column, just like tf.nn.embedding_lookup_sparse
-         with combiner='sqrtn'
+          with combiner='sqrtn'.
 
-        :param features: data tensor from tf.data.Dataset api
-        :param dict_key: embedding key in model.emb
-        :param base_key: target variable to do weighted sum
-        :param weighted_key: weight variable key list, at least on must be provided
-        :return:
+        :param features: Data tensor from tf.data.Dataset api
+        :param dict_key: Embedding key in model.emb
+        :param base_key: Target variable to do weighted sum
+        :param weighted_key: Weight variable key list, at least on must be provided
+        :return: None
         """
         setattr(self, base_key, tf.nn.embedding_lookup(self.emb[dict_key], features[base_key]))
         # print(f'self.{base_key}: {getattr(self, base_key)}')
@@ -246,15 +268,15 @@ class Model(object):
         # print()
 
     def song_weighted_sum(self, features, dict_key, base_key, weighted_key: list, is_seq=False):
-        """Do weighted sum to multivariate column, just like tf.nn.embedding_lookup_sparse
-         with combiner='sqrtn'
+        """Do weighted sum to multivariate column of songs table, just like tf.nn.embedding_lookup_sparse
+          with combiner='sqrtn'
 
-        :param features: data tensor from tf.data.Dataset api
-        :param dict_key: embedding key in model.emb
-        :param base_key: target variable to do weighted sum
-        :param weighted_key: weight variable key list, at least on must be provided
-        :param is_seq: is weights an array length description, if so,
-        :return:
+        :param features: Data tensor from tf.data.Dataset api
+        :param dict_key: Embedding key in model.emb
+        :param base_key: Target variable to do weighted sum
+        :param weighted_key: Weight variable key list, at least on must be provided
+        :param is_seq: Is weights an array length description, if so,
+        :return: None
         """
         if not is_seq:
             self.weighted_sum(features, dict_key, base_key, weighted_key)
@@ -270,6 +292,15 @@ class Model(object):
             setattr(self, name, val)
 
     def get_embedding_var(self, shape, init_fn, name, zero_first=True):
+        """Initialize the embedding variable, `zero_first` indicate whether to reserve a zero vector
+          for not trainable parameters, otherwise treat outlier a special category.
+
+        :param shape: Shape of [unique value of categorical feature, embedding dimension]
+        :param init_fn: Initialization funciton
+        :param name: Tensor name
+        :param zero_first: Indicate to prepend zero vector to embedding variables(not trainable)
+        :return: Initialized embedding variable
+        """
         if zero_first:
             return tf.concat([
                 tf.Variable(tf.zeros([1, shape[1]]), trainable=False),
@@ -280,6 +311,11 @@ class Model(object):
 
 
     def get_estimator(self, config:tf.estimator.RunConfig):
+        """Customized tf.estimator.Estimator object
+
+        :param config: see `tf.estimator.RunConfig`
+        :return: `tf.estimator.Estimator`
+        """
         self.logger.info('creating a custom Estimator')
         est = tf.estimator.Estimator(model_fn=self.model_fn, model_dir=self.model_dir, config=config)
 
@@ -291,10 +327,18 @@ class Model(object):
         return est
 
 class NeuMFModel(Model):
+    """Inherit Model(DNN), implement this paper [NCF](https://arxiv.org/pdf/1708.05031.pdf)"""
     def __init__(self, *args, **kwargs):
         super(NeuMFModel, self).__init__(*args, **kwargs)
 
     def model_fn(self, features, labels, mode):
+        """Implement model graph
+
+        :param features: A dictionary of tensors keyed by the feature name.
+        :param labels: A tensor representing the labels
+        :param mode: The execution mode, as defined in tf.estimator.ModeKeys.
+        :return: `tf.estimator.EstimatorSpec`
+        """
         is_train = mode == tf.estimator.ModeKeys.TRAIN
         self.logger.info(f'mode: {mode}, is_train: {is_train}, use dropout: {is_train and self.p.drop_rate > 0}')
 
@@ -380,6 +424,7 @@ class NeuMFModel(Model):
 
 
 class BestScoreExporter(tf.estimator.Exporter):
+    """Only export model has the best score, like lowest loss or highest accuracy."""
     logger = utils.logger('BestScoreExporter')
 
     def __init__(self,
@@ -403,6 +448,7 @@ class BestScoreExporter(tf.estimator.Exporter):
         return self._name
 
     def get_last_eval(self):
+        """Get the latest best score."""
         path = f'{self.model_dir}/best.eval'
         if flex.io(path).exists():
             return utils.read_pickle(path)
@@ -410,13 +456,24 @@ class BestScoreExporter(tf.estimator.Exporter):
             return None
 
     def save_last_eval(self, best:float):
+        """Save the latest best score."""
         self.logger.info(f'Persistent best eval: {best}')
         path = f'{self.model_dir}/best.eval'
         utils.write_pickle(path, best)
 
     def export(self, estimator, export_path, checkpoint_path, eval_result,
              is_the_final_export):
+        """Call `tf.estimator.Estimator.export_savedmodel` to export model to protocol buffer.
 
+        :param estimator: `tf.estimator.Estimator` object
+        :param export_path: A string containing a directory where to write the export.
+        :param checkpoint_path: The checkpoint path to export.
+        :param eval_result: The output of `Estimator.evaluate` on this checkpoint.
+        :param is_the_final_export: This boolean is True when this is an export in the
+            end of training.  It is False for the intermediate exports during
+            the training.
+        :return:
+        """
         self.logger.info(f'eval_result: {eval_result}')
         curloss = eval_result['loss']
         if self.best is None or self.best >= curloss:

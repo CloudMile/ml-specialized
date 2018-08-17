@@ -1,4 +1,4 @@
-import random, tensorflow as tf, shutil, os, pandas as pd, numpy as np
+import tensorflow as tf, shutil, os, pandas as pd, numpy as np
 from oauth2client.client import GoogleCredentials
 from googleapiclient import discovery
 from datetime import datetime
@@ -6,6 +6,10 @@ from datetime import datetime
 from . import app_conf, input, model as m, utils, metadata
 
 class Service(object):
+    """Business logic object, all kind of logic write down here to called by controller,
+      maybe there are some other assistance object, like input.Input for data handle... etc.
+
+    """
     instance = None
     logger = utils.logger(__name__)
 
@@ -14,6 +18,11 @@ class Service(object):
         self.inp :input.Input = input.Input.instance
 
     def train_ridge(self):
+        """Train model with scikit-learn package, see `sklearn.linear_model.Ridge` for
+          model comparison.
+
+        :return: None
+        """
         from sklearn.preprocessing import StandardScaler
         from sklearn.linear_model import Ridge
 
@@ -41,11 +50,11 @@ class Service(object):
         ridge.fit(tr_x, tr_y)
 
         def rmspe(label, pred):
+            """Because we take log to target, so now take np.expm1 back."""
             label, pred = np.expm1(label), np.expm1(pred)
             return np.sqrt((((label - pred) / label) ** 2).mean())
 
         def rmse(label, pred):
-            # label, pred = np.expm1(label), np.expm1(pred)
             return np.sqrt(((label - pred) ** 2).mean())
 
         tr_pred, vl_pred = ridge.predict(tr_x), ridge.predict(vl_x)
@@ -60,7 +69,15 @@ class Service(object):
         self.logger.info(f'RMSE on train data: {tr_rmse}, valid data: {vl_rmse}')
 
     def train(self, model_name='deep', reset=True):
+        """Train tensorflow model with tf.estimator.Estimator object
 
+        Train spec: wrap train_fn or training hook(optional)
+        Eval spec: wrap valid_fn or validation hook(optional)
+
+        :param model_name: Model name in `deep` `wide_and_deep` `ridge`
+        :param reset: If True, empty model directory, otherwise not
+        :return: self
+        """
         self.check_model_name(model_name)
 
         if model_name == 'ridge': return self.train_ridge()
@@ -140,12 +157,17 @@ class Service(object):
     def read_transformed(self, fpath):
         """Read transformed data for model prediction
 
-        :param fpath:
-        :return:
+        :param fpath: File path
+        :return: Data with DataFrame type
         """
         return pd.read_csv(fpath, dtype=self.inp.get_processed_dtype(is_serving=True))
 
     def find_latest_expdir(self, model_name):
+        """Find latest exported directory by specified model name
+
+        :param model_name: Model name in `dnn` `neu_mf`
+        :return: Latest directory path
+        """
         self.check_model_name(model_name)
         model_dir = self.p.dnn_model_dir if model_name == 'deep' else self.p.wnd_model_dir
         # Found latest export dir
@@ -153,11 +175,16 @@ class Service(object):
         return f'{export_dir}/{sorted(os.listdir(export_dir))[-1]}'
 
     def check_model_name(self, model_name):
+        """Check if model name in (`deep` `wide_and_deep` `ridge`)
+
+        :param model_name: Model name in `deep` `wide_and_deep` `ridge`
+        :return:
+        """
         assert model_name in ('deep', 'wide_and_deep', 'ridge'), \
             "model_name only support ('deep', 'wide_and_deep', 'ridge')"
 
     def find_ml(self):
-        """GCP ML service
+        """Return GCP ML service
 
         :return: GCP ML service object
         """
@@ -165,11 +192,11 @@ class Service(object):
         return discovery.build('ml', 'v1', credentials=credentials)
 
     def create_model_rsc(self, ml, model_name):
-        """
+        """Create model repository on GCP ML-Engine
 
-        :param ml: ML service
-        :param model_name: model resource name
-        :return:
+        :param ml: GCP ML service object
+        :param model_name: Model name to put on ML-Engine repository
+        :return: self
         """
         proj_uri = f'projects/{self.p.project_id}'
         try:
@@ -181,11 +208,11 @@ class Service(object):
         return self
 
     def clear_model_ver(self, ml, model_name):
-        """
+        """Clear all model versions in repository
 
-        :param ml: ML service
-        :param model_name: model resource name
-        :return:
+        :param ml: GCP ML service object
+        :param model_name: Model name to put on ML-Engine repository
+        :return: self
         """
         model_rsc = f'projects/{self.p.project_id}/models/{model_name}'
         vdict = ml.projects().models().versions().list(parent=model_rsc).execute()
@@ -208,12 +235,12 @@ class Service(object):
         return self
 
     def create_model_ver(self, ml, model_name, deployment_uri):
-        """
+        """Create a new model version with current datetime as version name
 
-        :param ml: ML service
-        :param model_name: model resource name
-        :param deployment_uri: GCS directory uri path
-        :return:
+        :param ml: GCP ML service object
+        :param model_name: Model name to put on ML-Engine repository
+        :param deployment_uri: GCS path to locate the saved model
+        :return: self
         """
         model_uri = f'projects/{self.p.project_id}/models/{model_name}'
         now = datetime.now().strftime('%Y_%m_%d__%H_%M_%S')
@@ -237,8 +264,8 @@ class Service(object):
 
         :param datasource: Array list contains many dict objects
         :param model_name: Deployed model name for prediction, for no version provide,
-            gcp will get default version
-        :return:
+            GCP will get default version
+        :return: Prediction result
         """
         model_uri = f'projects/{self.p.project_id}/models/{model_name}'
         ml = self.find_ml()

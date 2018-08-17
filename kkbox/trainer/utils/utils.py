@@ -5,10 +5,16 @@ from datetime import datetime
 from collections import Counter
 
 class Logging(object):
+    """Logging object"""
     instance = None
 
     @staticmethod
     def get_logger(name):
+        """Initialize the logging object by name
+
+        :param name: Logger name
+        :return: Object from `logging.getLogger`
+        """
         if Logging.instance is None:
             print(f'init logger instance ...')
 
@@ -19,11 +25,12 @@ class Logging(object):
 
         return Logging.instance.getLogger(name)
 
-# short path of Logging.logger
 def logger(name):
+    """Short path of Logging.logger"""
     return Logging.get_logger(name)
 
 def cmd(commands):
+    """Execute command in python code"""
     import subprocess
 
     proc = subprocess.Popen(commands, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
@@ -44,6 +51,7 @@ def timestamp():
     return int(datetime.now().timestamp())
 
 def deep_walk(path, prefix:str=None):
+    """Deep walk directory, return all object in the directory with specified prefix(context) string."""
     path = os.path.abspath(path)
     if not prefix:
         prefix = ''
@@ -66,30 +74,12 @@ def write_pickle(path, obj):
     with open(path, 'wb') as fp:
         pickle.dump(obj, fp)
 
-# def leave_one_out(e):
-#     msno, labels, target = e
-#     # labels is missing value
-#     if labels is None or type(labels) == float and pd.isna(labels):
-#         # type(labels) in (tuple, list) and not len(labels)
-#         weights = stats['weights']
-#     else:
-#         stats_copy = stats.copy()
-#         # Handle in array mode
-#         if type(labels) == str: labels = [labels]
-#         for label in labels:
-#             if stats_copy['count'][label] == 1:
-#                 stats_copy.drop(label, inplace=True)
-#             else:
-#                 stats_copy.loc[label, 'count'] -= 1
-#                 # if target == 1:
-#                 #     stats_copy.loc[label, 'sum'] -= 1
-#                 # stats_copy.loc[label, 'mean'] = stats_copy['sum'][label] / stats_copy['count'][label]
-#         weights = stats_copy['weights']
-#     # label_ary.append(tuple(weights.index))
-#     # weight_ary.append(tuple(weights.values))
-
 from sklearn.base import BaseEstimator, TransformerMixin
 class BaseMapper(BaseEstimator, TransformerMixin):
+    """Inherit scikit-learn class to custom our mapper object, for the purpose to transform all
+      kind of feature to numeric to feed in model.
+
+    """
     def init_check(self):
         return self
 
@@ -213,8 +203,8 @@ class CatgMapper(BaseMapper):
         else:
             return y.str.split(f'\s*{re.escape(self.sep)}\s*')
 
-    def transform(self, y): # , is_multi=None
-        """transform data(must fit first)
+    def transform(self, y):
+        """Transform data(must fit first)
 
         :param y: string or string list
         :return: Tuple with integer elements
@@ -223,14 +213,6 @@ class CatgMapper(BaseMapper):
 
         y = pd.Series(y)
         if self.is_multi:
-            # def map_fn(ary):
-            #     if type(ary) in (list, tuple):
-            #         return tuple(sorted(self.enc_[e] if e in self.enc_ else 0 for e in ary))
-            #     else:
-            #         return (0,)
-            #
-            # x = self.split(y).map(map_fn)
-
             y = self.split(y)
             lens = y.map(lambda ary: len(ary) if type(ary) in (list, tuple) else 1)
             indices = np.cumsum(lens)
@@ -270,8 +252,8 @@ class CatgMapper(BaseMapper):
         return self
 
 class CountMapper(CatgMapper):
-    """依照出現頻率進行編碼, 頻率由高到低的index = 0, 1, 2, 3 ..., 以此類推
-     keep index = 0 for outlier.
+    """Mapping label to numeric order by occurrence frequency of label,
+      the more frequency the lower index, vice versa
     """
     def __init__(self, lowest_freq_thres=0, **kw):
         super(CountMapper, self).__init__(**kw)
@@ -316,7 +298,7 @@ class CountMapper(CatgMapper):
         return self
 
 class NumericMapper(BaseMapper):
-    """fit numerical feature"""
+    """Fit numerical to count common statistical values"""
     def __init__(self, name=None, default=None, scaler=None):
         self.default = default
         self.name = name

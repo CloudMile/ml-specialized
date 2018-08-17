@@ -1,5 +1,6 @@
 import tensorflow as tf
 
+# raw data feature
 RAW_HEADER = [
     'msno', 'song_id', 'source_system_tab', 'source_screen_name', 'source_type',
     'city', 'bd', 'gender', 'registered_via', 'registration_init_time',
@@ -8,6 +9,7 @@ RAW_HEADER = [
     'target'
 ]
 
+# raw data type
 RAW_DTYPES = [
     str, str, str, str, str,
     str, str, str, str, str,
@@ -57,6 +59,7 @@ CONTEXT_FEATURES = ['source_system_tab', 'source_screen_name', 'source_type']
 TARGET_NAME = ['target']
 HEADER = MEMBER_FEATURES + SONG_FEATURES + CONTEXT_FEATURES + TARGET_NAME
 
+# tensor data types
 HEADER_DTYPES = [
     # Members
     tf.int32, tf.int32, tf.int32,
@@ -123,6 +126,7 @@ HEADER_DEFAULTS = [
     [0]
 ]
 
+# embedding feature label and dimension.
 EMB_COLS = {
     'city': 3, 'gender': 3, 'registered_via': 3, 'msno_age_catg': 3,
     'song_id': 16, 'genre_ids': 8, 'artist_name': 16, 'composer': 16, 'lyricist': 16, 'language': 3,
@@ -130,11 +134,11 @@ EMB_COLS = {
     # 'song_query': 16,
 }
 
+# numeric feature labels
 NUMERIC_COLS = [
     'registration_init_time', 'expiration_date', 'msno_age_num', 'msno_tenure', 'song_yy',
     'song_length', 'song_pplrty', 'song_clicks'
 ]
-
 
 # target feature name (response or class variable)
 TARGET_NAME = 'target'

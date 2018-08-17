@@ -1,12 +1,12 @@
-import tensorflow as tf, os, pandas as pd
-from datetime import datetime
+import os, pandas as pd
 
 from . import app_conf, service, input
-from . import model as m
 from .utils import utils
 
 class Ctrl(object):
-    """
+    """High level controller object for restful style or local function call, exposed function always
+      come up with one parameter, which is usually a dictionary object, this job of this kind object just
+      do data receive and check, this is one of design patterns called MVC
 
     """
     instance = None
@@ -36,7 +36,7 @@ class Ctrl(object):
           - Clean:
             - Fill missing value, drop unnecessary features
 
-          - Split: split train data to train part and valid part to avoid overfitting
+          - Split: split train data to train part and valid part to check metrics on valid data to avoid overfitting
 
           - Prepare:
             - Join store and store_states to make the **Fat table**
@@ -55,7 +55,7 @@ class Ctrl(object):
 
         :param p: Parameters
           - fpath: training file path
-        :return:
+        :return: self
         """
         data = self.input.clean(p.fpath, is_serving=False)
         self.input.split(data)
@@ -72,7 +72,7 @@ class Ctrl(object):
 
         :param p: Parameters
           - fpath: training file path
-        :return:
+        :return: Transformed data
         """
         data = self.input.clean(p.fpath, is_serving=True)
         data = self.input.prepare(data, is_serving=True)
@@ -85,7 +85,7 @@ class Ctrl(object):
         :param p: Parameters
           - reset: If True empty the training model directory
           - model_name: Specify which model to train
-        :return:
+        :return: self
         """
         self.service.train(reset=p.reset, model_name=p.model_name)
         return self
@@ -95,7 +95,9 @@ class Ctrl(object):
 
         :param p: Parameters
           - bucket_name: GCS unique bucket name
-        :return:
+          - prefix: path behind GCS bucket
+          - model_path: Exported model protocol buffer directory
+        :return: self
         """
         from google.cloud import storage
 
@@ -108,13 +110,18 @@ class Ctrl(object):
         for local, blob_name in utils.deep_walk(p.model_path, prefix=p.prefix):
             self.logger.info(f'copy {local} to {blob_name}')
             bucket.blob(blob_name).upload_from_filename(local)
-
+        return self
 
     def deploy(self, p):
-        """
+        """Use restful api to deploy model(already uploaded to GCS) to ML-Engine
+          1. First create model repository
+          2. We will delete all model versions first, of course this is optional, in fact GCP provide multi versions on model repository but
+            we need to specify a default model version for serving
+          3. Create new model version on specific repository
 
-        :param p:
-        :return:
+        :param p: Parameters
+          - model_name: ML-Engine repository name
+        :return: self
         """
         ml = self.service.find_ml()
         self.service.create_model_rsc(ml, p.model_name)
@@ -125,8 +132,11 @@ class Ctrl(object):
     def local_predict(self, p):
         """Read local saved protocol buffer file and do prediction
 
-        :param p: config params
-        :return:
+        :param p: Parameters
+          - datasource: DataFrame or file path to predict
+          - is_src_file: Is datasource a DataFrame object or file path, True: DataFrame object, False: file path
+          - model_name: Model name in `dnn` `neu_mf`
+        :return: Prediction result
         """
         from tensorflow.contrib import predictor
 
@@ -149,10 +159,18 @@ class Ctrl(object):
         return predictions
 
     def online_predict(self, p):
-        """
+        """Call online deployed model through restful api by `googleapiclient`
 
-        :param p: p.datasource must be structure as [{}, {} ...]
-        :return:
+        param p: Parameters
+          - datasource: Records style json object, e.g:
+            [
+             {key: value, key2: value2, ...},
+             {key: value, key2: value2, ...},
+             ...
+            ]
+          - is_src_file: Is datasource a DataFrame object or file path, True: DataFrame object, False: file path
+          - model_name: Model name in `dnn` `neu_mf`
+        :return: Predicted result
         """
         self.logger.info(f"Online prediction ...")
         datasource = p.datasource
@@ -163,75 +181,5 @@ class Ctrl(object):
         records = datasource.to_dict('records')
         return self.service.online_predict(records, p.model_name)
 
-    # TODO: alternative prediction way, use tf.saved_model.loader.load
-    def local_predict_alt(self, p):
-        """Alternative way for prediction, use tf.saved_model.loader.load to load pb file.
-        but you should know what the output node, and the input, just for a memo
-
-        :param p:
-        :return:
-        """
-        if p.is_src_file:
-            datasource = p.datasource
-        else:
-            datasource = self.service.read_transformed(p.datasource)
-
-        if not isinstance(datasource, pd.DataFrame):
-            datasource = pd.DataFrame(datasource)
-
-        export_dir = self.service.find_latest_expdir(p.model_name)
-        n_total, count = len(datasource), 0
-        tf.reset_default_graph()
-        with tf.Session(graph=tf.Graph()) as sess:
-            tf.saved_model.loader.load(sess, [tf.saved_model.tag_constants.SERVING], export_dir)
-            predictions = []
-            # Json serving input
-            for pipe in self.service.padded_batch(datasource):
-                s = datetime.now()
-                feed_dict = {
-                    f'{k}:0': v
-                    for k, v in pipe.to_dict('list').items()}
-                pred = sess.run(sess.graph.get_tensor_by_name('dnn/pred:0'),
-                                feed_dict=feed_dict)
-                count += len(pipe)
-                self.logger.info(f"{count}/{n_total} ...")
-                predictions.extend(pred.ravel())
-        return predictions
-
-    # TODO hack: inspect data
-    def inspect(self, key):
-        model = m.Model(model_dir=self.p.model_dir)
-        train_fn = self.input.generate_input_fn(
-            file_names_pattern=self.p.train_files,
-            mode=tf.estimator.ModeKeys.TRAIN,
-            num_epochs=self.p.num_epochs,
-            batch_size=5000,
-            shuffle=False
-        )
-
-        feat_data, target = train_fn()
-        feat_spec = model.feature.create_feature_columns()
-        dense_data = tf.feature_column.input_layer(feat_data, feat_spec[key])
-        dense_all = tf.feature_column.input_layer(feat_data, list(feat_spec.values()))
-
-        with tf.Session() as sess:
-            tf.global_variables_initializer().run()
-            sess.run(tf.tables_initializer())
-            encoded, origin, feat_data, target_, all_ = sess.run([
-                dense_data, feat_data[key], feat_data, target, dense_all])
-        return encoded, origin, feat_data, target_, all_
-
-    # TODO any test !
-    def test(self):
-        serving_inp = self.input.csv_serving_fn()
-        return serving_inp
-
 Ctrl.instance = Ctrl()
 
-# @api_view(['GET', 'POST'])
-# @permission_classes([CustomPermission])
-# @authentication_classes([CustomTokenAuthentication])
-# def entry(*args, **dicts):
-#     req = args[0]
-#     func = dicts.get('func')
-#     return utils.dispatcher(Ctrl.instance, func, req)

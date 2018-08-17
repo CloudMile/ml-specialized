@@ -7,6 +7,10 @@ from . import app_conf, input, model as m
 from .utils import utils
 
 class Service(object):
+    """Business logic object, all kind of logic write down here to called by controller,
+      maybe there are some other assistance object, like input.Input for data handle... etc.
+
+    """
     instance = None
     logger = utils.logger(__name__)
 
@@ -16,6 +20,19 @@ class Service(object):
 
     def train(self, train_fn=None, tr_hook=None, valid_fn=None, vl_hook=None,
               reset=True, model_name='dnn'):
+        """Train tensorflow model with tf.estimator.Estimator object
+
+        Train spec: wrap train_fn or training hook(optional)
+        Eval spec: wrap valid_fn or validation hook(optional)
+
+        :param train_fn: Data source provider, usually with implicit iterator to pull from train data
+        :param tr_hook: Callback object inherit from `tf.train.SessionRunHook` in training period
+        :param valid_fn: Data source provider, usually with implicit iterator to pull from valid data
+        :param vl_hook: Callback object inherit from `tf.train.SessionRunHook` in validation period
+        :param reset: If True, empty model directory, otherwise not
+        :param model_name: Model name in `dnn` `neu_mf`
+        :return: self
+        """
         self.check_model_name(model_name)
         model_dir = self.p.model_dir if model_name == 'dnn' else self.p.neu_mf_model_dir
 
@@ -104,6 +121,11 @@ class Service(object):
         return self
 
     def find_latest_expdir(self, model_name):
+        """Find latest exported directory by specified model name
+
+        :param model_name: Model name in `dnn` `neu_mf`
+        :return: Latest directory path
+        """
         self.check_model_name(model_name)
         model_dir = self.p.neu_mf_model_dir if model_name == 'neu_mf' else self.p.model_dir
         # Found latest export dir
@@ -111,15 +133,25 @@ class Service(object):
         return f'{export_dir}/{sorted(os.listdir(export_dir))[-1]}'
 
     def check_model_name(self, model_name):
+        """Check if model name in (`dnn` `neu_mf`)
+
+        :param model_name: Model name in `dnn` `neu_mf`
+        :return:
+        """
         assert model_name in ('dnn', 'neu_mf'), "model_name only support ('dnn', 'neu_mf')"
 
     def read_transformed(self, fpath):
+        """Same as `Ctrl.instance.transform`, transform data to model recognized format in serving period
+
+        :param fpath: Raw serving file path
+        :return: Transformed data
+        """
         data = self.inp.clean(fpath, is_serving=True)
         data = self.inp.prepare(data, is_serving=True)
         return self.inp.transform(data, is_serving=True)
 
     def find_ml(self):
-        """GCP ML service
+        """Return GCP ML service
 
         :return: GCP ML service object
         """
@@ -127,11 +159,11 @@ class Service(object):
         return discovery.build('ml', 'v1', credentials=credentials)
 
     def create_model_rsc(self, ml, model_name):
-        """
+        """Create model repository on GCP ML-Engine
 
-        :param ml: ML service
-        :param model_name: model resource name
-        :return:
+        :param ml: GCP ML service object
+        :param model_name: Model name to put on ML-Engine repository
+        :return: self
         """
         proj_uri = f'projects/{self.p.project_id}'
         try:
@@ -143,11 +175,11 @@ class Service(object):
         return self
 
     def clear_model_ver(self, ml, model_name):
-        """
+        """Clear all model versions in repository
 
-        :param ml: ML service
-        :param model_name: model resource name
-        :return:
+        :param ml: GCP ML service object
+        :param model_name: Model name to put on ML-Engine repository
+        :return: self
         """
         model_rsc = f'projects/{self.p.project_id}/models/{model_name}'
         vdict = ml.projects().models().versions().list(parent=model_rsc).execute()
@@ -170,19 +202,19 @@ class Service(object):
         return self
 
     def create_model_ver(self, ml, model_name, deployment_uri):
-        """
+        """Create a new model version with current datetime as version name
 
-        :param ml: ML service
-        :param model_name: model resource name
-        :param deployment_uri: GCS directory uri path
-        :return:
+        :param ml: GCP ML service object
+        :param model_name: Model name to put on ML-Engine repository
+        :param deployment_uri: GCS path to locate the saved model
+        :return: self
         """
         model_uri = f'projects/{self.p.project_id}/models/{model_name}'
         now = datetime.now().strftime('%Y_%m_%d__%H_%M_%S')
         version = f'v{now}' # f'v{utils.timestamp()}'
 
         self.logger.info(f'create model {model_name} from {deployment_uri}')
-        res = ml.projects().models().versions().create(
+        ml.projects().models().versions().create(
             parent=model_uri,
             body={
                 'name': version,
@@ -192,9 +224,17 @@ class Service(object):
                 'runtimeVersion': '1.8'
             }
         ).execute()
-        return res
+        return self
 
     def padded_batch(self, data, n_batch=1000):
+        """Batch yeild data and pad the variable length feature to the same length in a batch,
+         this job should done in `input.Input.generate_input_fn`, but exported model doesn't contains
+         the dataset part, so here we do this by pandas.
+
+        :param data: Not padded transformed data for prediction
+        :param n_batch: Batch size
+        :return: Yield padded batch data
+        """
         assert n_batch <= 1000, 'Prediction batch size must less equal than 1000!'
 
         multi_cols = self.inp.get_multi_cols(is_serving=True)
@@ -220,19 +260,17 @@ class Service(object):
             # self.logger.info(f"padded_batch take time: {datetime.now() - s}")
             yield pipe
 
-
-
     def online_predict(self, datasource, model_name):
         """Online prediction with ML Engine
 
         :param datasource: Array list contains many dict objects
         :param model_name: Deployed model name for prediction, for no version provide,
-            gcp will get default version
-        :return:
+            GCP will get default version
+        :return: Prediction result
         """
         model_uri = f'projects/{self.p.project_id}/models/{model_name}'
         ml = self.find_ml()
-        # return data type must be in records mode
+
         result = ml.projects().predict(name=model_uri, body={'instances': datasource}).execute()
         return [rec.get('predictions')[0] for rec in result.get('predictions')]
 

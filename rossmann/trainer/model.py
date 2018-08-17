@@ -12,7 +12,7 @@ class Model(object):
     def __init__(self, model_dir, name='deep'):
         """
 
-        :param model_dir:
+        :param model_dir: Model checkpoint directory path
         """
         self.name = name
         self.p = app_conf.instance
@@ -21,6 +21,11 @@ class Model(object):
         pass
 
     def get_estimator(self, config:tf.estimator.RunConfig):
+        """In this case, return `tf.estimator.DNNRegressor` or `tf.estimator.DNNLinearCombinedRegressor`,
+
+        :param config: see `tf.estimator.RunConfig`
+        :return: `tf.estimator.Estimator`
+        """
         feat_spec = list(self.feature.create_feature_columns().values())
         deep_columns, wide_columns = self.feature.get_deep_and_wide_columns(feat_spec)
         if self.name == 'deep':
@@ -101,56 +106,8 @@ class Model(object):
         print(f"creating a regression model: {est}")
         return est
 
-# class BestScoreExporter(tf.estimator.Exporter):
-#     logger = utils.logger('BestScoreExporter')
-#
-#     def __init__(self,
-#                  name,
-#                  serving_input_receiver_fn,
-#                  assets_extra=None,
-#                  as_text=False):
-#         self._name = name
-#         self.serving_input_receiver_fn = serving_input_receiver_fn
-#         self.assets_extra = assets_extra
-#         self.as_text = as_text
-#         self.best = None
-#         self._exports_to_keep = 1
-#         self.export_result = None
-#         self.logger.info('BestScoreExporter init')
-#
-#     @property
-#     def name(self):
-#         return self._name
-#
-#     def export(self, estimator, export_path, checkpoint_path, eval_result,
-#              is_the_final_export):
-#
-#         self.logger.info(f'eval_result: {eval_result}')
-#         curloss = eval_result['loss']
-#         if self.best is None or self.best >= curloss:
-#             # Clean first, only keep the best weights
-#             self.logger.info(f'clean export_path: {export_path}')
-#             try:
-#                 shutil.rmtree(export_path)
-#             except Exception as e:
-#                 self.logger.warn(e)
-#
-#             os.makedirs(export_path, exist_ok=True)
-#
-#             self.best = curloss
-#             self.logger.info('nice eval loss: {}, export to pb'.format(curloss))
-#             self.export_result = estimator.export_savedmodel(
-#                 export_path,
-#                 self.serving_input_receiver_fn,
-#                 assets_extra=self.assets_extra,
-#                 as_text=self.as_text,
-#                 checkpoint_path=checkpoint_path)
-#         else:
-#             self.logger.info('bad eval loss: {}'.format(curloss))
-#
-#         return self.export_result
-
 class BestScoreExporter(tf.estimator.Exporter):
+    """Only export model has the best score, like lowest loss or highest accuracy."""
     logger = utils.logger('BestScoreExporter')
 
     def __init__(self,
@@ -174,6 +131,7 @@ class BestScoreExporter(tf.estimator.Exporter):
         return self._name
 
     def get_last_eval(self):
+        """Get the latest best score."""
         path = f'{self.model_dir}/best.eval'
         if os.path.exists(path):
             return utils.read_pickle(path)
@@ -181,13 +139,24 @@ class BestScoreExporter(tf.estimator.Exporter):
             return None
 
     def save_last_eval(self, best:float):
+        """Save the latest best score."""
         self.logger.info(f'Persistent best eval: {best}')
         path = f'{self.model_dir}/best.eval'
         utils.write_pickle(path, best)
 
     def export(self, estimator, export_path, checkpoint_path, eval_result,
              is_the_final_export):
+        """Call `tf.estimator.Estimator.export_savedmodel` to export model to protocol buffer.
 
+        :param estimator: `tf.estimator.Estimator` object
+        :param export_path: A string containing a directory where to write the export.
+        :param checkpoint_path: The checkpoint path to export.
+        :param eval_result: The output of `Estimator.evaluate` on this checkpoint.
+        :param is_the_final_export: This boolean is True when this is an export in the
+            end of training.  It is False for the intermediate exports during
+            the training.
+        :return:
+        """
         self.logger.info(f'eval_result: {eval_result}')
         curloss = eval_result['rmspe']
         if self.best is None or self.best >= curloss:
@@ -224,19 +193,19 @@ class Feature(object):
     def create_feature_columns(self):
         """Creates tensorFlow feature_column(s) based on the metadata of the input features.
 
-            The tensorFlow feature_column objects are created based on the data types of the features
-            defined in the metadata.py module.
+        The tensorFlow feature_column objects are created based on the data types of the features
+        defined in the metadata.py module.
 
-            The feature_column(s) are created based on the input features,
-            and the constructed features (process_features method in input.py), during reading data files.
-            Both type of features (input and constructed) should be defined in metadata.py.
+        The feature_column(s) are created based on the input features,
+        and the constructed features (process_features method in input.py), during reading data files.
+        Both type of features (input and constructed) should be defined in metadata.py.
 
-            Extended features (if any) are created, based on the base features, as the extend_feature_columns
-            method is called, before the returning complete the feature_column dictionary.
+        Extended features (if any) are created, based on the base features, as the extend_feature_columns
+        method is called, before the returning complete the feature_column dictionary.
 
-            Returns:
-              {string: tf.feature_column}: dictionary of name:feature_column .
-            """
+        Returns:
+          {string: tf.feature_column}: dictionary of name:feature_column .
+        """
 
         # load the numeric feature stats (if exists)
         feature_stats = input.Input.instance.load_feature_stats()

@@ -1,20 +1,34 @@
 import numpy as np, pandas as pd, tensorflow as tf
-import json, multiprocessing, html, shutil, re
+import  multiprocessing, html, shutil, re
 
-from collections import OrderedDict, defaultdict
+from collections import OrderedDict
 from sklearn.utils import shuffle as sk_shuffle
 from sklearn import preprocessing
 from datetime import datetime
 
-from . import metadata, model as m, app_conf
+from . import metadata, app_conf
 from .utils import utils
 
 
 def sep_fn(e):
-    """"""
+    """Callback function for Input.fit, Input.transform function"""
     return e
 
 class Input(object):
+    """Handle all logic about data pipeline.
+
+    Training period: Clean -> Split -> Prepare -> Fit -> Transform
+    Serving period: Clean -> Prepare -> Transform
+
+    In clean step do missing value imputing, maybe some data transformation to string features.
+    In Split step simple split data to train and valid data, split rule is according to the data,
+      usually random split to avoiding model overfitting, here we split by history logs of each user.
+    In prepare step do raw data transformation, add features and drop useless features
+    In fit step remember the statistical information about numeric data, label mapping about categorical data,
+      and all other information to persistent for serving needed.
+    In transform steps, transform all features to numeric, like normalize numeric features,
+      embedding or one hot encoding categorical features.
+    """
     instance = None
     logger = utils.logger(__name__)
 
@@ -27,6 +41,12 @@ class Input(object):
         }
 
     def clean(self, data, is_serving=False):
+        """Missing value imputing, maybe some data transformation to string features.
+
+        :param data: Input data, maybe DataFrame or simple file path string
+        :param is_serving: True: train or eval period, False: serving period
+        :return: Cleaned data
+        """
         self.logger.info(f'Clean start, is_serving: {is_serving}')
         s = datetime.now()
         if isinstance(data, str):
@@ -79,6 +99,16 @@ class Input(object):
         return ret
 
     def split(self, data):
+        """Only necessary in training period, here we split by  history logs of each user,
+          take latest 10 percent to valid data.
+
+        Fist we calculate the statistical of user history logs counts
+        for model generation, we will drop some user who's number of history logs less than 25% quantile,
+        for huge amount history logs user, we take latest data of number of 75% quantile
+
+        :param data: Train data for split
+        :return: tuple of (train part, valid part)
+        """
         self.logger.info('Split start')
         s = datetime.now()
         if isinstance(data, str):
@@ -112,11 +142,48 @@ class Input(object):
         return tr, vl
 
     def flatten(self, data, uni_cols:list, m_col, target):
+        """For multivariate feature, which has replica value in a grid, like array,
+          in order to calculate the statistical info we need to flatten the data by this feature
+
+          For example, raw data like
+          ```
+          uni_col | multi_col
+          --------|----------
+           xxx      (1, 2, 3)
+          ```
+          which flatten to
+          ```
+          uni_col | multi_col
+          --------|----------
+           xxx    |     1
+           xxx    |     2
+           xxx    |     3
+          ```
+
+        :param data: Input data with DataFrame type
+        :param uni_cols: Univariate features to be replicated
+        :param m_col: Multivariate feature
+        :param target: Label column
+        :return:
+        """
         from .utils import utils_nb
 
         return utils_nb.flatten(data, uni_cols, m_col, target)
 
     def msno_statis(self, data, col, to_calc, base_msno, is_multi=False):
+        """Group by songs to calculate the statistical value with relevant features,
+          e.g: count of favorite song_id, mean of favorite song_id, the statistical value usually could
+          be weights of relevant feature, in tensorflow song_id will embedding to vector and count, mean
+          could be weights of song_id, so that we can do weighted sum or weighted average to song_id to
+          represent a feature of an user, see `tf.embedding_lookup_sparse`.
+
+        :param data: Input data with DataFrame type
+        :param col: Feature to calculated in a user
+        :param to_calc: Array list, specify which statistical values to compute, e.g: mean, count, max, min
+        :param base_msno: To keep the order of user, because the data order may shuffle when calculate.
+        :param is_multi: Indicate if col is a multivariate feature
+        :return: Dictionary object, structure {key1: [...], key2: [...], ...}
+        """
         s = datetime.now()
         label_name = f'msno_{col}_hist'
         calc_names = [f'msno_{col}_{calc}' for calc in to_calc]
@@ -140,6 +207,19 @@ class Input(object):
         return self.extract_col(series)
 
     def song_statis(self, data, col, to_calc, base_song, is_multi=False):
+        """Group by members to calculate the statistical value with relevant features,
+          e.g: count of favorite age(10-20, 20-30 ...), mean of favorite age, the statistical value usually could
+          be weights of relevant feature, in tensorflow song_id will embedding to vector and count, mean
+          could be the weights of age, so that we can do weighted sum or weighted average to age to
+          represent a feature of a song, see `tf.embedding_lookup_sparse`.
+
+        :param data: Input data with DataFrame type
+        :param col: Feature to calculated in a user
+        :param to_calc: Array list, specify which statistical values to compute, e.g: mean, count, max, min
+        :param base_msno: To keep the order of user, because the data order may shuffle when calculate.
+        :param is_multi: Indicate if col is a multivariate feature
+        :return: Dictionary object, structure {key1: [...], key2: [...], ...}
+        """
         s = datetime.now()
         label_name = f'song_{col}_hist'
         calc_names = [f'song_{col}_{calc}' for calc in to_calc]
@@ -165,11 +245,22 @@ class Input(object):
         return ret
 
     def extract_col(self, series):
+        """Transform structure [{}, {}, {}...] to {key1: [], key2: [] ...}
+
+        :param series: pandas.Series object structure [{}, {}, {}...]
+        :return: Transformed dictionary object
+        """
         ret = {k: [] for k in series.values[0].keys()}
         series.map(lambda dict_: [ret[k].append(v) for k, v in dict_.items()])
         return ret
 
     def prepare(self, data, is_serving=False):
+        """Raw data transformation, add features and drop useless features.
+
+        :param data: Cleaned data with DataFrame type
+        :param is_serving: True: train or eval period, False: serving period
+        :return: Prepared data with DataFrame type
+        """
         self.logger.info('Prepare start')
         s = datetime.now()
         if isinstance(data, str):
@@ -201,6 +292,17 @@ class Input(object):
 
 
     def prepare_members(self, data, members, songs):
+        """Raw data transformation about members table.
+
+          We will write back to members table after adding features, this is for the sake of performance,
+          because train data merge profile table (such as members, songs) will replicate the feature in a members
+          or in a songs.
+
+        :param data: Cleaned train data with DataFrame type
+        :param members: Cleaned members data with DataFrame type
+        :param songs: Cleaned songs data with DataFrame type
+        :return: Prepared members table with DataFrame type
+        """
         data = data.merge(songs, how='left', on='song_id')
 
         self.logger.info('processing msno_age_catg done, msno_age_num, msno_tenure ...')
@@ -261,6 +363,17 @@ class Input(object):
         return members
 
     def prepare_songs(self, data, members, songs):
+        """Raw data transformation about songs table.
+
+          We will write back to songs table after adding features, this is for the sake of performance,
+          because train data merge profile table (such as members, songs) will replicate the feature in a members
+          or in a songs.
+
+        :param data: Cleaned train data with DataFrame type
+        :param members: Cleaned members data with DataFrame type
+        :param songs: Cleaned songs data with DataFrame type
+        :return: Prepared members table with DataFrame type
+        """
         data = data.merge(members, how='left', on='msno')
 
         # Decode isrc
@@ -315,6 +428,12 @@ class Input(object):
         return songs
 
     def fit(self, data):
+        """Remember the statistical information about numeric data, label mapping about categorical data,
+          and all other information to persistent for serving needed.
+
+        :param data: Cleaned and prepared data with DataFrame type
+        :return: self
+        """
         self.logger.info('Fit start')
 
         s = datetime.now()
@@ -355,11 +474,12 @@ class Input(object):
         return self
 
     def transform(self, data, is_serving=False):
-        """Transform columns value, maybe include categorical column to integer, numeric column normalize...
+        """Transform all features to numeric, like normalize numeric features,
+          embedding or one hot encoding categorical features.
 
-        :param data:
-        :param is_serving:
-        :return:
+        :param data: Cleaned, fitted and prepared data with DataFrame type
+        :param is_serving: True: train or eval period, False: serving period
+        :return: Transformed data with DataFrame type
         """
         self.logger.info('Transform start')
 
@@ -484,13 +604,27 @@ class Input(object):
         return ret
 
     def _transform_feature(self, y, mapper:utils.BaseMapper, is_multi=False, sep=None):
-        """Transform specific column
+        """Transform specific features, include univariate and multivariate features.
 
-        :param y:
-        :param mapper:
-        :param is_multi:
-        :param sep:
-        :return:
+          For multivariate feature:
+          transform
+          ```python
+          [ ['label1', 'label2', 'label3'],
+            ['label2', 'label3'],
+            ... ]
+          ```
+          to
+          ```
+          [ [1, 2, 3],
+            [2, 3],
+            ... ]
+          ```
+
+        :param y: Input iterable array like data
+        :param mapper: Fitted object to catch the transform needed information
+        :param is_multi: True for multivariate feature, otherwise univariate
+        :param sep: Separate symbol for string feature to split
+        :return: Transformed feature
         """
         s = datetime.now()
         def split(inp):
@@ -512,9 +646,9 @@ class Input(object):
 
                 concat = []
                 y.map(lambda ary: concat.extend(ary) if type(ary) in (list, tuple) else
-                concat.append(None))
+                                  concat.append(None))
                 y = pd.Series(concat).map(mapper.enc_, na_action='ignore') \
-                    .fillna(0).astype(int).values
+                      .fillna(0).astype(int).values
                 ret = pd.Series(np.split(y, indices)[:-1]).map(tuple).values
 
                 # y = pd.Series(concat).map(mapper.enc_, na_action='ignore')\
@@ -527,6 +661,19 @@ class Input(object):
         return ret
 
     def train_merge(self, inputs, members, songs, mapper_dict, is_serving=False):
+        """Merge table with train table + all kind profile tables(members, songs).
+
+          For the sake of convenient to track the data to the raw data, for members and songs table
+          we add raw key feature, like msno -> raw_msno, song_id -> raw_song_id, the feature with prefix
+          raw_ will not be transformed to numeric to model, just key for merge.
+
+        :param inputs: Cleaned, fitted prepared transformed data with DataFrame type
+        :param members: Prepared members table
+        :param songs: Prepared songs table
+        :param mapper_dict: Information object generated in fit step.
+        :param is_serving: train or eval period, False: serving period
+        :return: Merged data, aka **Fat Table**
+        """
         columns = metadata.HEADER if not is_serving else metadata.SERVING_COLUMNS
         ret = inputs.merge(members, how='left', on='raw_msno') \
                     .merge(songs, how='left', on='raw_song_id', suffixes=('', '_y')) \
@@ -560,6 +707,11 @@ class Input(object):
         return ret
 
     def json_serving_input_fn(self):
+        """Declare the serving specification, what data format should receive and how to transform to
+          put in model.
+
+        :return: `tf.estimator.export.ServingInputReceiver` object
+        """
         self.logger.info(f'use json_serving_input_fn !')
 
         columns = metadata.SERVING_COLUMNS
@@ -577,6 +729,11 @@ class Input(object):
         )
 
     def get_multi_cols(self, is_serving=False):
+        """Return multivariate feature labels
+
+        :param is_serving: True: train or eval period, False: serving period
+        :return: Multivariate feature labels
+        """
         columns = metadata.HEADER if not is_serving else metadata.SERVING_COLUMNS
         return list(filter(lambda col: (col.endswith('_hist') or
                                         col.endswith('_count') or col.endswith('_mean') or
@@ -584,16 +741,31 @@ class Input(object):
                            columns))
 
     def get_uni_cols(self, is_serving=False):
+        """Return univariate feature labels
+
+        :param is_serving: True: train or eval period, False: serving period
+        :return: Multivariate feature labels
+        """
         columns = metadata.HEADER if not is_serving else metadata.SERVING_COLUMNS
         multi_cols = self.get_multi_cols()
         return list(filter(lambda col: col not in multi_cols, columns))
 
     def get_dtype(self, is_serving=False):
+        """Return data type of each feature, include added feature.
+
+        :param is_serving: True: train or eval period, False: serving period
+        :return: Multivariate feature labels
+        """
         columns = metadata.HEADER if not is_serving else metadata.SERVING_COLUMNS
         defaults = metadata.HEADER_DEFAULTS if not is_serving else metadata.SERVING_DEFAULTS
         return dict( map(lambda e: (e[0], type(e[1][0])), list(zip(columns, defaults))) )
 
     def get_shape(self, is_serving=False):
+        """Return data shape of each feature, include added feature.
+
+        :param is_serving: True: train or eval period, False: serving period
+        :return: Data shape of each feature, include added feature.
+        """
         cols = metadata.SERVING_COLUMNS if is_serving else metadata.HEADER
         shapes = []
         multi_cols = self.get_multi_cols(is_serving)
@@ -616,11 +788,14 @@ class Input(object):
         """Generates an input function for reading training and evaluation data file(s).
         This uses the tf.data APIs.
 
+        Here we abandon the dataset.shuffle function, tensorflow suggest us to extend the eval frequency
+        to avoid reset the data pipeline too early to see the whole train data. so we will shuffle data with
+        sklearn.utils.shuffle
+
         Args:
-            file_names_pattern: [str] - file name or file name patterns from which to read the data.
+            inputs: Data with DataFrametype.
             mode: tf.estimator.ModeKeys - either TRAIN or EVAL.
                 Used to determine whether or not to randomize the order of data.
-            file_encoding: type of the text files. Can be 'csv' or 'tfrecords'
             skip_header_lines: int set to non-zero in order to skip header lines in CSV files.
             num_epochs: int - how many times through to read the data.
               If None will loop through data indefinitely
@@ -629,8 +804,7 @@ class Input(object):
             multi_threading: boolean - indicator to use multi-threading or not
             hooks: Implementations of tf.train.SessionHook
         Returns:
-            A function () -> (features, indices) where features is a dictionary of
-              Tensors, and indices is a single Tensor of label indices.
+            Tuple of (data_fn, hook), hook for do something in session initialize period
         """
         is_serving = True if mode == tf.estimator.ModeKeys.PREDICT else False
         # Train, Eval

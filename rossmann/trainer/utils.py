@@ -6,10 +6,16 @@ from datetime import datetime
 from matplotlib import pyplot as plt
 
 class Logging(object):
+    """Logging object"""
     instance = None
 
     @staticmethod
     def get_logger(name):
+        """Initialize the logging object by name
+
+        :param name: Logger name
+        :return: Object from `logging.getLogger`
+        """
         if Logging.instance is None:
             print(f'init logger instance ...')
 
@@ -20,11 +26,13 @@ class Logging(object):
 
         return Logging.instance.getLogger(name)
 
-# short path of Logging.logger
+
 def logger(name):
+    """Short path of Logging.logger"""
     return Logging.get_logger(name)
 
 def cmd(commands):
+    """Execute command in python code"""
     import subprocess
 
     proc = subprocess.Popen(commands, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
@@ -42,7 +50,7 @@ def cmd(commands):
     return ''.join(outs)
 
 def find_latest_expdir(conf):
-    # Found latest export dir
+    """Found latest export dir"""
     export_dir = f'{conf.model_dir}/export/{conf.export_name}'
     return f'{export_dir}/{sorted(os.listdir(export_dir))[-1]}'
 
@@ -50,6 +58,7 @@ def timestamp():
     return int(datetime.now().timestamp())
 
 def deep_walk(path, prefix:str=None):
+    """Deep walk directory, return all object in the directory with specified prefix(context) string."""
     path = os.path.abspath(path)
     if not prefix:
         prefix = ''
@@ -93,18 +102,3 @@ def heatmap(data, *cols, xtick=None, ytick=None, annot=True, fmt='.2f', figsize=
     draw(data, axs)
     plt.show()
 
-# def heatmap(data, *cols, annot=True, fmt='.2f', xtick=None, ytick=None, label='sales'):
-#     pivot_params = list(cols) + [label]
-#     g = data.groupby(list(cols))[label]
-#     mean_ = g.mean().reset_index().pivot(*pivot_params)
-#     count_ = g.size().reset_index().pivot(*pivot_params)
-#     # sum_ = g.sum().reset_index().pivot(*pivot_params)
-#
-#     f, axs = plt.subplots(1, 2, figsize=(16, 4))
-#     sns.heatmap(mean_, annot=annot, fmt=fmt, xtick=xtick, ytick=ytick, ax=axs[0])
-#     sns.heatmap(count_, annot=annot, fmt=fmt, ax=axs[1])
-#     # sns.heatmap(sum_, annot=annot, ax=axs[2])
-#     axs[0].set_title(f'mean')
-#     axs[1].set_title(f'count')
-#     # axs[2].set_title(f'sum')
-#     plt.show()

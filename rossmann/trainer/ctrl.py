@@ -16,6 +16,11 @@ class Ctrl(object):
         self.input:input.Input = input.Input.instance
 
     def set_client_secret(self):
+        """Set environment variable to api key path in order to
+          access GCP service
+
+        :return: self
+        """
         from google.auth import environment_vars
 
         CREDENTIAL_NAME = environment_vars.CREDENTIALS
@@ -24,14 +29,30 @@ class Ctrl(object):
         return self
 
     def prepare(self, p):
-        """
-        1. Clean data: fill NaN value, drop unnecessary columns
-        2. Prepare data: add, merge, drop columns ...
-        3. Fit (if in training stage)
-        4. Transform
-        5. Split input data to train, valid
-        :param p:
-        :return:
+        """Do all data pipeline from raw data to the format model recognized
+          - Clean:
+            - Fill missing value, drop unnecessary features
+
+          - Prepare:
+            - Join store and store_states to make the **Fat table**
+            - Add features we mentioned in data exploration, drop also.
+            - Filter some records not appropriate, like open = 0
+            - Maybe persistent some files
+
+          - Fit:
+            - Persistent the statistical information of numeric features
+            - Persistent the unique count value of categorical features
+
+          - Transform:
+            - Numeric data normalization
+            - Make all categorical variable to int, one hot encoding ... etc.
+            - Because of the scale of sales is large and large standard deviation, **we take logarithm of the target column**
+
+          - Split: split train data to train part and valid part to check metrics on valid data to avoid overfitting
+
+        :param p: Parameters
+          - fpath: training file path
+        :return: self
         """
         data = self.input.clean(p.fpath, is_serving=False)
         data = self.input.prepare(data, is_serving=False)
@@ -40,10 +61,12 @@ class Ctrl(object):
         return self
 
     def transform(self, p):
-        """Transform serving input data
+        """Transform future input data, just like training period, clean -> prepare -> transform
+          but not fit
 
-        :param p: config params
-        :return:
+        :param p: Parameters
+          - fpath: training file path
+        :return: Transformed data
         """
         data = self.input.clean(p.fpath, is_serving=True)
         data = self.input.prepare(data, is_serving=True)
@@ -51,14 +74,24 @@ class Ctrl(object):
         return data
 
     def train(self, p):
+        """Simple call service.train
+
+        :param p: Parameters
+          - reset: If True empty the training model directory
+          - model_name: Specify which model to train
+        :return: self
+        """
         self.service.train(model_name=p.model_name, reset=p.reset)
         return self
 
     def upload_model(self, p):
-        """
+        """Upload trained model to GCP ML-Engine
 
-        :param p:
-        :return:
+        :param p: Parameters
+          - bucket_name: GCS unique bucket name
+          - prefix: path behind GCS bucket
+          - model_path: Exported model protocol buffer directory
+        :return: self
         """
         from google.cloud import storage
 
@@ -75,10 +108,15 @@ class Ctrl(object):
 
 
     def deploy(self, p):
-        """
+        """Use restful api to deploy model(already uploaded to GCS) to ML-Engine
+          1. First create model repository
+          2. We will delete all model versions first, of course this is optional, in fact GCP provide multi versions on model repository but
+            we need to specify a default model version for serving
+          3. Create new model version on specific repository
 
-        :param p:
-        :return:
+        :param p: Parameters
+          - model_name: ML-Engine repository name
+        :return: self
         """
         ml = self.service.find_ml()
         self.service.create_model_rsc(ml, p.model_name)
@@ -90,8 +128,11 @@ class Ctrl(object):
     def local_predict(self, p):
         """Read local saved protocol buffer file and do prediction
 
-        :param p: config params
-        :return:
+        :param p: Parameters
+          - datasource: DataFrame or file path to predict
+          - is_src_file: Is datasource a DataFrame object or file path, True: DataFrame object, False: file path
+          - model_name: Model name in `dnn` `neu_mf`
+        :return: Prediction result
         """
         from tensorflow.contrib import predictor
 
@@ -99,10 +140,10 @@ class Ctrl(object):
         predict_fn = predictor.from_saved_model(export_dir, signature_def_key='predict')
 
         if p.is_src_file:
+            datasource = p.datasource
+        else:
             datasource = self.service.read_transformed(p.datasource)
             datasource = self.input.fill_catg_na(datasource)
-        else:
-            datasource = p.datasource
 
         base = np.zeros(len(datasource))
         open_flag = datasource.open == '1'
@@ -114,10 +155,17 @@ class Ctrl(object):
         return base
 
     def online_predict(self, p):
-        """
+        """Call online deployed model through restful api by `googleapiclient`
 
-        :param p: p.datasource must be structure as [{}, {} ...]
-        :return:
+        param p: Parameters
+          - datasource: Records style json object, e.g:
+            [
+             {key: value, key2: value2, ...},
+             {key: value, key2: value2, ...},
+             ...
+            ]
+          - model_name: Model name in `dnn` `neu_mf`
+        :return: Predicted result
         """
         datasource = p.datasource
         base = np.zeros(len(datasource))
@@ -129,131 +177,6 @@ class Ctrl(object):
         base[open_flag] = np.round(np.expm1(preds))
         return base
 
-    # TODO: alternative prediction way, use tf.saved_model.loader.load
-    def local_predict_alt(self, p):
-        """Alternative way for prediction, use tf.saved_model.loader.load to load pb file.
-        but you should know what the output node, and the input, just for a memo
-
-        :param p:
-        :return:
-        """
-        if p.is_src_file:
-            datasource = self.service.read_transformed(p.datasource)
-        else:
-            datasource = p.datasource
-        export_dir = utils.find_latest_expdir(self.conf)
-        self.logger.info(f'Found export dir: {export_dir}')
-
-        tf.reset_default_graph()
-        with tf.Session(graph=tf.Graph()) as sess:
-            tf.saved_model.loader.load(sess, [tf.saved_model.tag_constants.SERVING], export_dir)
-            # Json serving input
-            feed_dict = {
-                f'{k}:0': v
-                for k, v in datasource.to_dict('list').items()}
-            predictions = sess.run(sess.graph.get_tensor_by_name('dnn/logits/BiasAdd:0'),
-                                   feed_dict=feed_dict)
-
-            # CSV serving input
-            # feed_dict = { 'file_name_pattern:0': ['./data/test.csv'] }
-            # predictions = sess.run(sess.graph.get_tensor_by_name('dnn/logits/BiasAdd:0'), feed_dict=feed_dict)
-
-        return np.round(np.expm1(predictions.ravel()))
-
-    # TODO hack: inspect data
-    def inspect(self, key, encoded_key, typ='deep'):
-        model = m.Model(model_dir=None)
-        train_fn = self.input.generate_input_fn(
-            file_names_pattern=self.conf.train_files,
-            mode=tf.estimator.ModeKeys.TRAIN,
-            num_epochs=self.conf.num_epochs,
-            batch_size=5000,
-            shuffle=False
-        )
-
-        feat_data, target = train_fn()
-        feat_spec = model.feature.create_feature_columns()
-        deep_spec, wide_spec = model.feature.get_deep_and_wide_columns(list(feat_spec.values()))
-        deep_spec = dict(pd.Series(deep_spec).map(lambda e: (e.name, e)).values)
-        wide_spec = dict(pd.Series(wide_spec).map(lambda e: (e.name, e)).values)
-        print(f'deep_spec.keys: {deep_spec.keys()}')
-        print(f'wide_spec.keys: {wide_spec.keys()}')
-        origin = feat_data[key]
-        if typ == 'deep':
-            encoded = tf.feature_column.input_layer(feat_data, deep_spec[encoded_key])
-            dense = tf.feature_column.input_layer(feat_data, list(deep_spec.values()))
-            with tf.Session() as sess:
-                tf.global_variables_initializer().run()
-                sess.run(tf.tables_initializer())
-                origin_, encoded_, all_ = sess.run([origin, encoded, dense])
-            return origin_, encoded_, all_
-        # Wide and deep can't use
-        else:
-            wrap = tf.feature_column.indicator_column(wide_spec[encoded_key])
-            encoded = tf.feature_column.input_layer(feat_data, wrap)
-            with tf.Session() as sess:
-                tf.global_variables_initializer().run()
-                sess.run(tf.tables_initializer())
-                origin_, encoded_ = sess.run([origin, encoded])
-            return origin_, encoded_, None
-
-    # TODO hack:
-    def get_from_dataset(self, p):
-        model = m.Model(model_dir=self.conf.model_dir)
-        feat_spec = model.feature.create_feature_columns()
-        train_fn = self.input.generate_input_fn(
-            file_names_pattern=self.conf.train_files,
-            mode=tf.estimator.ModeKeys.TRAIN,
-            num_epochs=1,
-            batch_size=10000,
-            shuffle=False
-        )
-        valid_fn = self.input.generate_input_fn(
-            file_names_pattern=self.conf.valid_files,
-            mode=tf.estimator.ModeKeys.EVAL,
-            num_epochs=1,
-            batch_size=10000,
-            shuffle=False
-        )
-
-        def from_dataset(data_fn):
-            ret = []
-            x, y = data_fn()
-            x = tf.feature_column.input_layer(x, list(feat_spec.values()))
-            with tf.Session() as sess:
-                tf.global_variables_initializer().run()
-                sess.run(tf.tables_initializer())
-                while True:
-                    try:
-                        x_, y_ = sess.run([x, y])
-                        ret.append(np.c_[x_, y_])
-                    except tf.errors.OutOfRangeError as e: break
-            return np.concatenate(ret, 0)
-        tr = from_dataset(train_fn)
-        vl = from_dataset(valid_fn)
-
-        tr_label, vl_label = tr[:, -1], vl[:, -1]
-        return tr[:, :-1], tr_label, vl[:, :-1], vl_label
-
-    # TODO any test !
-    def test(self):
-        model = m.Model(model_dir=self.conf.model_dir)
-        with tf.Graph().as_default():
-            train_fn = self.input.generate_input_fn(
-                file_names_pattern=self.conf.train_files,
-                mode=tf.estimator.ModeKeys.TRAIN,
-                num_epochs=self.conf.num_epochs,
-                batch_size=5000,
-                shuffle=False
-            )
-
-            feat_data, target = train_fn()
-            feat_spec = model.feature.create_feature_columns()
-            dense_data = tf.feature_column.input_layer({'year': tf.constant([['2019'], ['2015']])}, feat_spec['year'])
-            with tf.Session() as sess:
-                tf.global_variables_initializer().run()
-                sess.run(tf.tables_initializer())
-                return sess.run(dense_data)
 
 Ctrl.instance = Ctrl()
 

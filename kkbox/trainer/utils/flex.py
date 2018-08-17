@@ -1,18 +1,22 @@
 import codecs, os, re, shutil
 from io import StringIO, BytesIO
 
-from trainer.utils import utils
+from . import utils
 
 def rm_quiet(fpath):
     if fpath is not None and os.path.exists(fpath) and os.path.isfile(fpath):
         os.remove(fpath)
 
 def io(path):
+    """Portable for local io or GCS io, the purpose is to access object with the same api,
+      although tensorflow tf.gfile.Gile could do this, but not on windows, so we still implement this module
+    """
     m = re.search('(?i)^gs://', path)
     return LocalIO(path) if m is None else GCSIO(path)
 
 
 class FlexIO(object):
+    """Abstract class for IO interface to implement"""
     def __init__(self, path):
         m = re.search('(?i)^gs://', path)
         self.is_local = True if m is None else False
@@ -61,6 +65,7 @@ class FlexIO(object):
 
 
 class LocalIO(FlexIO):
+    """Local IO object"""
     logger = utils.logger('LocalIO')
 
     def __init__(self, path):
@@ -111,6 +116,7 @@ class LocalIO(FlexIO):
 
 
 class GCSIO(FlexIO):
+    """IO object for access GCS object"""
     logger = utils.logger('GCSIO')
 
     def __init__(self, path):

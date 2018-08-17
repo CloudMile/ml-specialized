@@ -18,7 +18,7 @@ def draw_roc_curve(y, pred):
     plt.show()
 
 def flatten(data, uni_cols:list, m_col, target):
-    # sep = '|'
+    """Refer to `input.Input.flatten`"""
     multi = data[m_col].copy()
     multi.loc[multi.isna()] = multi[multi.isna()].map(lambda e: ('',))
     series = pd.Series(list(zip(list(data[uni_cols].values),

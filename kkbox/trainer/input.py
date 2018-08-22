@@ -142,7 +142,7 @@ class Input(object):
         return tr, vl
 
     def flatten(self, data, uni_cols:list, m_col, target):
-        """For multivariate feature, which has replica value in a grid, like array,
+        """For multivalent feature, which has replica value in a grid, like array,
           in order to calculate the statistical info we need to flatten the data by this feature
 
           For example, raw data like
@@ -162,7 +162,7 @@ class Input(object):
 
         :param data: Input data with DataFrame type
         :param uni_cols: Uni-variate features to be replicated
-        :param m_col: Multivariate feature
+        :param m_col: Multivalent feature
         :param target: Label column
         :return:
         """
@@ -181,7 +181,7 @@ class Input(object):
         :param col: Feature to calculated in a user
         :param to_calc: Array list, specify which statistical values to compute, e.g: mean, count, max, min
         :param base_msno: To keep the order of user, because the data order may shuffle when calculate.
-        :param is_multi: Indicate if col is a multivariate feature
+        :param is_multi: Indicate if col is a multivalent feature
         :return: Dictionary object, structure {key1: [...], key2: [...], ...}
         """
         s = datetime.now()
@@ -217,7 +217,7 @@ class Input(object):
         :param col: Feature to calculated in a user
         :param to_calc: Array list, specify which statistical values to compute, e.g: mean, count, max, min
         :param base_msno: To keep the order of user, because the data order may shuffle when calculate.
-        :param is_multi: Indicate if col is a multivariate feature
+        :param is_multi: Indicate if col is a multivalent feature
         :return: Dictionary object, structure {key1: [...], key2: [...], ...}
         """
         s = datetime.now()
@@ -451,7 +451,7 @@ class Input(object):
             self.logger.info(f'fit {uni_catg} ...')
             mapper_dict[uni_catg] = utils.CountMapper(outlier='').fit(data[uni_catg])
 
-        # Categorical multivariate features
+        # Categorical multivalent features
         for multi_catg in ('genre_ids', 'artist_name', 'composer', 'lyricist'):
             self.logger.info(f'fit {multi_catg} ...')
             mapper_dict[multi_catg] = utils.CountMapper(is_multi=True, sep=sep_fn, outlier='').fit(
@@ -517,7 +517,7 @@ class Input(object):
                     vocab_key = feat
                     self.logger.info(f'transform {feat}, vocab_key: {vocab_key} ...')
                     members[feat] = self._transform_feature(members[feat], mapper_dict[vocab_key])
-                # Multivariate features
+                # Multivalent features
                 elif feat in ('msno_artist_name_hist', 'msno_composer_hist', 'msno_genre_ids_hist', 'msno_language_hist',
                               'msno_lyricist_hist',
                               'msno_pos_query_hist', 'msno_neg_query_hist', 'msno_source_screen_name_hist',
@@ -552,7 +552,7 @@ class Input(object):
                     vocab_key = feat
                     self.logger.info(f'transform {feat}, vocab_key: {vocab_key} ...')
                     songs[feat] = self._transform_feature(songs[feat], mapper_dict[vocab_key])
-                # Multivariate features
+                # Multivalent features
                 elif feat in ('genre_ids', 'artist_name', 'composer', 'lyricist',
                               'song_city_hist', 'song_gender_hist', 'song_msno_age_catg_hist', 'song_registered_via_hist',
                               'song_source_screen_name_hist',
@@ -604,9 +604,9 @@ class Input(object):
         return ret
 
     def _transform_feature(self, y, mapper:utils.BaseMapper, is_multi=False, sep=None):
-        """Transform specific features, include univariate and multivariate features.
+        """Transform specific features, include univariate and multivalent features.
 
-          For multivariate feature:
+          For multivalent feature:
           transform
           ```python
           [ ['label1', 'label2', 'label3'],
@@ -622,7 +622,7 @@ class Input(object):
 
         :param y: Input iterable array like data
         :param mapper: Fitted object to catch the transform needed information
-        :param is_multi: True for multivariate feature, otherwise univariate
+        :param is_multi: True for multivalent feature, otherwise univariate
         :param sep: Separate symbol for string feature to split
         :return: Transformed feature
         """
@@ -729,10 +729,10 @@ class Input(object):
         )
 
     def get_multi_cols(self, is_serving=False):
-        """Return multivariate feature labels
+        """Return multivalent feature labels
 
         :param is_serving: True: train or eval period, False: serving period
-        :return: Multivariate feature labels
+        :return: Multivalent feature labels
         """
         columns = metadata.HEADER if not is_serving else metadata.SERVING_COLUMNS
         return list(filter(lambda col: (col.endswith('_hist') or
@@ -744,7 +744,7 @@ class Input(object):
         """Return univariate feature labels
 
         :param is_serving: True: train or eval period, False: serving period
-        :return: Multivariate feature labels
+        :return: Multivalent feature labels
         """
         columns = metadata.HEADER if not is_serving else metadata.SERVING_COLUMNS
         multi_cols = self.get_multi_cols()
@@ -754,7 +754,7 @@ class Input(object):
         """Return data type of each feature, include added feature.
 
         :param is_serving: True: train or eval period, False: serving period
-        :return: Multivariate feature labels
+        :return: Multivalent feature labels
         """
         columns = metadata.HEADER if not is_serving else metadata.SERVING_COLUMNS
         defaults = metadata.HEADER_DEFAULTS if not is_serving else metadata.SERVING_DEFAULTS

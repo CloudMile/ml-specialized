@@ -246,7 +246,7 @@ class Model(object):
             evaluation_hooks=[])
 
     def weighted_sum(self, features, dict_key, base_key, weighted_key: list):
-        """Do weighted sum to multivariate column, just like tf.nn.embedding_lookup_sparse
+        """Do weighted sum to multivalent column, just like tf.nn.embedding_lookup_sparse
           with combiner='sqrtn'.
 
         :param features: Data tensor from tf.data.Dataset api
@@ -268,7 +268,7 @@ class Model(object):
         # print()
 
     def song_weighted_sum(self, features, dict_key, base_key, weighted_key: list, is_seq=False):
-        """Do weighted sum to multivariate column of songs table, just like tf.nn.embedding_lookup_sparse
+        """Do weighted sum to multivalent column of songs table, just like tf.nn.embedding_lookup_sparse
           with combiner='sqrtn'
 
         :param features: Data tensor from tf.data.Dataset api

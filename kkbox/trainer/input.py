@@ -23,7 +23,7 @@ class Input(object):
     In clean step do missing value imputing, maybe some data transformation to string features.
     In Split step simple split data to train and valid data, split rule is according to the data,
       usually random split to avoiding model overfitting, here we split by history logs of each user.
-    In prepare step do raw data transformation, add features and drop useless features
+    In prepare step add features if needed and drop useless features.
     In fit step remember the statistical information about numeric data, label mapping about categorical data,
       and all other information to persistent for serving needed.
     In transform steps, transform all features to numeric, like normalize numeric features,
@@ -161,7 +161,7 @@ class Input(object):
           ```
 
         :param data: Input data with DataFrame type
-        :param uni_cols: Univariate features to be replicated
+        :param uni_cols: Uni-variate features to be replicated
         :param m_col: Multivariate feature
         :param target: Label column
         :return:
@@ -173,7 +173,7 @@ class Input(object):
     def msno_statis(self, data, col, to_calc, base_msno, is_multi=False):
         """Group by songs to calculate the statistical value with relevant features,
           e.g: count of favorite song_id, mean of favorite song_id, the statistical value usually could
-          be weights of relevant feature, in tensorflow song_id will embedding to vector and count, mean
+          be weights of relevant feature, in Tensorflow song_id will embedding to vector and count, mean
           could be weights of song_id, so that we can do weighted sum or weighted average to song_id to
           represent a feature of an user, see `tf.embedding_lookup_sparse`.
 
@@ -209,7 +209,7 @@ class Input(object):
     def song_statis(self, data, col, to_calc, base_song, is_multi=False):
         """Group by members to calculate the statistical value with relevant features,
           e.g: count of favorite age(10-20, 20-30 ...), mean of favorite age, the statistical value usually could
-          be weights of relevant feature, in tensorflow song_id will embedding to vector and count, mean
+          be weights of relevant feature, in Tensorflow song_id will embedding to vector and count, mean
           could be the weights of age, so that we can do weighted sum or weighted average to age to
           represent a feature of a song, see `tf.embedding_lookup_sparse`.
 
@@ -255,7 +255,7 @@ class Input(object):
         return ret
 
     def prepare(self, data, is_serving=False):
-        """Raw data transformation, add features and drop useless features.
+        """Add features if needed and drop useless features.
 
         :param data: Cleaned data with DataFrame type
         :param is_serving: True: train or eval period, False: serving period
@@ -349,7 +349,7 @@ class Input(object):
         members = members.merge(msno_extra, how='left', on='msno')
 
         self.logger.info('prepare members: fill null values made by data merge.')
-        # After merge, some members dosen't have any statistic values make the null, so fill default values
+        # After merge, some members doesn't have any statistic values make the null, so fill default values
         for stats_feat in metadata.MSNO_EXTRA_COLS:  # msno_extra_cols
             if stats_feat in ('msno_age_catg', 'msno_age_num', 'msno_tenure'): continue
 
@@ -412,7 +412,7 @@ class Input(object):
         songs = songs.merge(songs_extra, how='left', on='song_id').merge(basic_stats, how='left', on='song_id')
 
         self.logger.info('prepare songs: fill null values made by data merge.')
-        # After merge, some members dosen't have any statistic values make the null, so fill default values
+        # After merge, some members doesn't have any statistic values make the null, so fill default values
         for stats_feat in metadata.SONG_EXTRA_COLS:
             if stats_feat in ('song_cc', 'song_xxx', 'song_yy', 'song_length',
                               'song_artist_name_len', 'song_composer_len', 'song_lyricist_len', 'song_genre_ids_len'):
@@ -788,7 +788,7 @@ class Input(object):
         """Generates an input function for reading training and evaluation data file(s).
         This uses the tf.data APIs.
 
-        Here we abandon the dataset.shuffle function, tensorflow suggest us to extend the eval frequency
+        Here we abandon the dataset.shuffle function, Tensorflow suggest us to extend the eval frequency
         to avoid reset the data pipeline too early to see the whole train data. so we will shuffle data with
         sklearn.utils.shuffle
 

@@ -4,16 +4,16 @@ CloudMile project for google ml-specialist
 
 ## DNNRegressor/DNNLinearCombinedRegressor on Rossmann data 
 
-Rossmann Data是與時間序列有關的Data, 需要預測每間商店未來六個禮拜的銷售額, 最大的挑戰是您的Model是否能夠有能力去抓到個別商店的平均銷售額以及週期性, 季節性的Information
+Rossmann data is a collection of time-series data for the prediction of sales in the next 6 months for each store. The greatest challenge is whether the model can accurately obtain the mean sales for each store, as well as the periodic and seasonal information.
 
 - From kaggle [Rossmann](https://www.kaggle.com/c/rossmann-store-sales)
 - See the [rossman.ipynb](rossmann/rossman.ipynb) for details
 
 ## Custom tf.estimator.Estimator for KKBOX Music Recommendation Engine
 
-KKBOX data是music recommendation的挑戰, 透過個人使用紀錄去預測對歌曲的評分或是點擊率(CTR), 幸運的是label已經有負向資料, 1:喜歡, 0:不喜歡(KKBOX有自己的定義去label資料), 看看您是否能精準達到個人化推薦或是CTR的預測
+KKBOX data is the data for a music recommendation challenge. Through personal records, we attempt to predict the scoring for songs as well as the click-through rate (CTR). 
 
-- Music Personalize Recommendation, here because of the target column is binary, we take this as a classification problem, in a nutshell, this is a binary classification.
+- For this personalized music recommendation, since the target column is binary, we tackle this task as a classification problem, i.e. this is a binary classification problem.
 - From kaggle [WSDM - KKBox's Music Recommendation Challenge](https://www.kaggle.com/c/kkbox-music-recommendation-challenge/data)
 - See the [kkbox.ipynb](kkbox/kkbox.ipynb) for details
 
@@ -52,6 +52,6 @@ KKBOX data是music recommendation的挑戰, 透過個人使用紀錄去預測對
                 variables.index
         ```
         
-將data放置到個別的專案底下, 並且照著notebook的流程執行(但是Deploy model到GCP cloud的部分就需要GCP的帳號)
+ The project can be executed with jupyter notebook through the work flow after data is stored under respective directories. You will also need a GCP account to deploy model on Google Cloud Platform.
 
 

@@ -13,7 +13,7 @@ class Input(object):
     Serving period: Clean -> Prepare -> Transform
 
     In clean step do missing value imputing, maybe some data transformation to string features.
-    In prepare step do raw data transformation, add features and drop useless features
+    In prepare step add features if needed and drop useless features.
     In fit step remember the statistical information about numeric data, label mapping about categorical data,
       and all other information to persistent for serving needed.
     In transform steps, transform all features to numeric, like normalize numeric features,
@@ -72,7 +72,7 @@ class Input(object):
         return ret
 
     def prepare(self, data, is_serving=False):
-        """Raw data transformation, add features and drop useless features.
+        """Add features if needed and drop useless features.
 
         :param data: Cleaned data with DataFrame type
         :param is_serving: True: train or eval period, False: serving period

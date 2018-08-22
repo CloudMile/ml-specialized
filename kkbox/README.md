@@ -6,9 +6,9 @@
 
 The 11th ACM International Conference on Web Search and Data Mining (WSDM 2018) is challenging you to build a better music recommendation system using a donated dataset from KKBOX. WSDM (pronounced "wisdom") is one of the the premier conferences on web inspired research involving search and data mining. They're committed to publishing original, high quality papers and presentations, with an emphasis on practical but principled novel models.
 
-The ideal method for music recommendation would be analyzing binary music files in addition to analysis of the structured user logs. Nevertheless, due to the substantial size of binary files as well as the lack of such open data, here we focus on providing prediction of users' preference of songs from member history. The definition for preference can be found here Kaggle KKBOX Music Recommendation
+The ideal method for music recommendation would be analyzing binary music files in addition to analysis of the structured user logs. Nevertheless, due to the substantial size of binary files as well as the lack of such open data, here we focus on providing prediction of users' preference of songs from member history. The definition for preference can be found here [Kaggle KKBOX Music Recommendation](https://www.kaggle.com/c/kkbox-music-recommendation-challenge/data).
 
-We will build a standard DNN (Dense layer) model, also called fully connected layer, as well as the structure in [Neural Collaborative Filtering](https://arxiv.org/pdf/1708.05031.pdf)and provide comparison. We also heavily use averaged embedding similar to the combiner function in [tf.feature_column.embedding_column](https://www.tensorflow.org/api_docs/python/tf/feature_column/embedding_column).
+We will build a standard DNN (Dense layer) model, also called fully connected layer, as well as the structure in [Neural Collaborative Filtering](https://arxiv.org/pdf/1708.05031.pdf) and provide comparison. We also heavily use averaged embedding similar to the combiner function in [tf.feature_column.embedding_column](https://www.tensorflow.org/api_docs/python/tf/feature_column/embedding_column).
 
 
 ## What kind of problem to solve?

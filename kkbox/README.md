@@ -13,7 +13,7 @@ We will build a standard DNN (Dense layer) model, also called fully connected la
 
 ## What kind of problem to solve?
 
-Click Throgh Rate (CTR) like or Classification problem
+CTR problem (Click Through Rate) or Classification problem
 
 
 ## Dataset

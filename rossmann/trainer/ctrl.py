@@ -11,7 +11,7 @@ class Ctrl(object):
 
     def __init__(self, p):
         self.p = p
-        self.input:input.Input = input.Input(self.p)
+        self.input = input.Input(self.p)
         self.service: service.Service = service.Service(self.p, self.input)
 
     def set_client_secret(self):

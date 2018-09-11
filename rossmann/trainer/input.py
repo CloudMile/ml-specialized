@@ -24,7 +24,7 @@ class Input(object):
     instance = None
     logger = utils.logger(__name__)
 
-    def __init__(self, p:app_conf.Config):
+    def __init__(self, p):
         self.p = p
         self.feature = m.Feature(self)
         self.serving_fn = {

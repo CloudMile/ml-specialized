@@ -39,9 +39,7 @@ class Ctrl(object):
           - Split: split train data to train part and valid part to check metrics on valid data to avoid overfitting
 
           - Prepare:
-            - Join store and store_states to make the **Fat table**
             - Add features we mentioned in data exploration, drop also.
-            - Filter some records not appropriate, like open = 0
             - Maybe persistent some files
 
           - Fit:
@@ -51,7 +49,6 @@ class Ctrl(object):
           - Transform:
             - Numeric data normalization
             - Make all categorical variable to int, one hot encoding ... etc.
-            - Because of the scale of sales is large and large standard deviation, **we take logarithm of the target column**
 
         :param p: Parameters
           - fpath: training file path

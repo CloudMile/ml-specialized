@@ -13,9 +13,9 @@ class Service(object):
     instance = None
     logger = utils.logger(__name__)
 
-    def __init__(self):
-        self.p :app_conf.Config = app_conf.instance
-        self.inp :input.Input = input.Input.instance
+    def __init__(self, p, inp:input.Input):
+        self.p = p
+        self.inp = inp
 
     def train_ridge(self):
         """Train model with scikit-learn package, see `sklearn.linear_model.Ridge` for
@@ -26,8 +26,8 @@ class Service(object):
         from sklearn.preprocessing import StandardScaler
         from sklearn.linear_model import Ridge
 
-        tr = self.inp.fill_catg_na(pd.read_csv(app_conf.instance.train_files))
-        vl = self.inp.fill_catg_na(pd.read_csv(app_conf.instance.valid_files))
+        tr = self.inp.fill_catg_na(pd.read_csv(self.p.train_files))
+        vl = self.inp.fill_catg_na(pd.read_csv(self.p.valid_files))
         cut_pos = np.cumsum([len(tr), len(vl)]).tolist()
 
         # Numeric features
@@ -107,6 +107,7 @@ class Service(object):
         self.logger.info(f"Model_name: {model_name}")
         self.logger.info(f"Model directory: {run_config.model_dir}")
         model = m.Model(model_dir=model_dir, name=model_name)
+        model.feature = self.inp.feature
 
 
         exporter = m.BestScoreExporter(
@@ -148,7 +149,7 @@ class Service(object):
         )
         # train and evaluate
         tf.estimator.train_and_evaluate(
-            model.get_estimator(run_config),
+            model.get_estimator(self.p, run_config),
             train_spec,
             eval_spec
         )
@@ -273,5 +274,5 @@ class Service(object):
         result = ml.projects().predict(name=model_uri, body={'instances': datasource}).execute()
         return [rec.get('predictions')[0] for rec in result.get('predictions')]
 
-Service.instance = Service()
+# Service.instance = Service()
 

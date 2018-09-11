@@ -1,4 +1,4 @@
-import tensorflow as tf, numpy as np, os
+import numpy as np, os, argparse
 import pandas as pd
 
 from . import app_conf, service, input
@@ -9,11 +9,10 @@ class Ctrl(object):
     app_dir = ''
     logger = utils.logger(__name__)
 
-    def __init__(self):
-        self.service:service.Service = service.Service.instance
-        self.conf:app_conf.Config = app_conf.instance
-        self.feature:m.Feature = m.Feature()
-        self.input:input.Input = input.Input.instance
+    def __init__(self, p):
+        self.p = p
+        self.input:input.Input = input.Input(self.p)
+        self.service: service.Service = service.Service(self.p, self.input)
 
     def set_client_secret(self):
         """Set environment variable to api key path in order to
@@ -24,7 +23,7 @@ class Ctrl(object):
         from google.auth import environment_vars
 
         CREDENTIAL_NAME = environment_vars.CREDENTIALS
-        os.environ[CREDENTIAL_NAME] = self.conf.api_key_path
+        os.environ[CREDENTIAL_NAME] = self.p.api_key_path
         self.logger.info(f"Set env variable [{CREDENTIAL_NAME}]")
         return self
 
@@ -73,6 +72,31 @@ class Ctrl(object):
         data = self.input.transform(data, is_serving=True)
         return data
 
+    def submit(self, p):
+        """Simple call service.train
+
+        :param p: Parameters
+          - reset: If True empty the training model directory
+          - model_name: Specify which model to train
+        :return: self
+        """
+        commands = f"""
+            gcloud ml-engine jobs submit training {p.job_id} \
+                --job-dir {p.job_dir} \
+                --module-name trainer.ctrl \
+                --package-path trainer \
+                --region asia-east1 \
+                --scale-tier {p.scale_tier} \
+                --config config.yaml \
+                --runtime-version {p.runtime_version} \
+                -- \
+                --train-steps {p.train_steps} \
+                --method train \
+                --job-id {p.job_id}
+        """.strip()
+        utils.cmd(commands)
+        return self
+
     def train(self, p):
         """Simple call service.train
 
@@ -95,7 +119,6 @@ class Ctrl(object):
         """
         from google.cloud import storage
 
-        # utils.find_latest_expdir(self.conf)
         bucket = storage.Client().get_bucket(p.bucket_name)
         # clean model dir
         for blob in bucket.list_blobs(prefix=p.prefix):
@@ -178,7 +201,7 @@ class Ctrl(object):
         return base
 
 
-Ctrl.instance = Ctrl()
+# Ctrl.instance = Ctrl()
 
 # @api_view(['GET', 'POST'])
 # @permission_classes([CustomPermission])
@@ -187,3 +210,51 @@ Ctrl.instance = Ctrl()
 #     req = args[0]
 #     func = dicts.get('func')
 #     return utils.dispatcher(Ctrl.instance, func, req)
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        '--env',
+        default="cloud",
+        help='string "cloud" for app_conf.CMLEConfig, else app_conf.Config',
+    )
+    parser.add_argument(
+        '--method',
+        help='execution method in Controller object',
+    )
+    parser.add_argument(
+        '--job-dir',
+        help='where to put checkpoints',
+    )
+    parser.add_argument(
+        '--job-id',
+        help='job id for training and deploy',
+    )
+    parser.add_argument(
+        '--train-steps',
+        default=2308 * 8,
+        type=int,
+        help='max train steps',
+    )
+    parser.add_argument(
+        '--valid-steps',
+        default=989,
+        type=int,
+        help='max train steps',
+    )
+    parser.add_argument(
+        '--runtime-version',
+        default='1.10',
+        help='whether run on local machine instead of cloud',
+    )
+
+    args = parser.parse_args()
+
+    params = {}
+    params.update(app_conf.get_config(args.env).__dict__)
+    params.update(args.__dict__)
+    params = pd.Series(params)
+
+    ctrl = Ctrl(params)
+    execution = getattr(ctrl, params.get('method'))
+    execution(params)

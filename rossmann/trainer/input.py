@@ -24,9 +24,9 @@ class Input(object):
     instance = None
     logger = utils.logger(__name__)
 
-    def __init__(self):
-        self.p = app_conf.instance
-        self.feature = m.Feature.instance
+    def __init__(self, p:app_conf.Config):
+        self.p = p
+        self.feature = m.Feature(self)
         self.serving_fn = {
             'json': getattr(self, 'json_serving_input_fn')
             # 'csv': getattr(self, 'csv_serving_fn')
@@ -288,7 +288,7 @@ class Input(object):
             [type(e[0]) for e in columns]
         ))
 
-    def load_feature_stats(self):
+    def load_feature_stats(self, p):
         """
         Load numeric column pre-computed statistics (mean, stdv, min, max, etc.)
         in order to be used for scaling/stretching numeric columns.
@@ -304,7 +304,6 @@ class Input(object):
         """
 
         feature_stats = None
-        p = app_conf.instance
         try:
             if p.feature_stats_file is not None and tf.gfile.Exists(p.feature_stats_file):
                 with tf.gfile.Open(p.feature_stats_file) as file:
@@ -337,8 +336,7 @@ class Input(object):
         """
         self.logger.info(f'use json_serving_input_fn !')
 
-        feat_obj = m.Feature.instance
-        feat_cols = feat_obj.create_feature_columns()
+        feat_cols = self.feature.create_feature_columns(self.p)
         input_feature_columns = [feat_cols[feature_name] for feature_name in metadata.INPUT_FEATURE_NAMES]
 
         inputs = {}
@@ -492,4 +490,4 @@ class Input(object):
 
         return _input_fn
 
-Input.instance = Input()
+# Input.instance = Input()

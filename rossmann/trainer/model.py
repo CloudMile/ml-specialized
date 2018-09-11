@@ -15,31 +15,31 @@ class Model(object):
         :param model_dir: Model checkpoint directory path
         """
         self.name = name
-        self.p = app_conf.instance
         self.model_dir = model_dir
-        self.feature = Feature.instance
+        self.feature = None
         pass
 
-    def get_estimator(self, config:tf.estimator.RunConfig):
+    def get_estimator(self, p, config:tf.estimator.RunConfig):
         """In this case, return `tf.estimator.DNNRegressor` or `tf.estimator.DNNLinearCombinedRegressor`,
 
+        :param config: received parameters
         :param config: see `tf.estimator.RunConfig`
         :return: `tf.estimator.Estimator`
         """
-        feat_spec = list(self.feature.create_feature_columns().values())
+        feat_spec = list(self.feature.create_feature_columns(p).values())
         deep_columns, wide_columns = self.feature.get_deep_and_wide_columns(feat_spec)
         if self.name == 'deep':
             est = tf.estimator.DNNRegressor(
-                hidden_units=self.p.mlp_layers,
+                hidden_units=p.mlp_layers,
                 feature_columns=deep_columns,
                 model_dir=self.model_dir,
                 label_dimension=1,
                 weight_column=None,
-                optimizer=tf.train.AdamOptimizer(self.p.learning_rate),
+                optimizer=tf.train.AdamOptimizer(p.learning_rate),
                 # optimizer='Adagrad',
                 # optimizer=tf.train.GradientDescentOptimizer(learning_rate=0.001),
                 activation_fn=tf.nn.selu,
-                dropout=self.p.drop_rate,
+                dropout=p.drop_rate,
                 input_layer_partitioner=None,
                 config=config
             )
@@ -48,13 +48,13 @@ class Model(object):
                 model_dir=self.model_dir,
                 linear_feature_columns=wide_columns,
                 linear_optimizer='Ftrl',
-                # linear_optimizer=tf.train.GradientDescentOptimizer(self.p.learning_rate),
+                # linear_optimizer=tf.train.GradientDescentOptimizer(p.learning_rate),
                 dnn_feature_columns=deep_columns,
                 # dnn_optimizer='Adagrad',
-                dnn_optimizer=tf.train.AdamOptimizer(self.p.learning_rate),
-                dnn_hidden_units=self.p.mlp_layers,
+                dnn_optimizer=tf.train.AdamOptimizer(p.learning_rate),
+                dnn_hidden_units=p.mlp_layers,
                 dnn_activation_fn=tf.nn.selu,
-                dnn_dropout=self.p.drop_rate,
+                dnn_dropout=p.drop_rate,
                 label_dimension=1,
                 weight_column=None,
                 input_layer_partitioner=None,
@@ -66,7 +66,7 @@ class Model(object):
         self.logger.info(f'Use {est}')
         # Create directory for export, it will raise error if in GCS environment
         try:
-            os.makedirs(f'{self.p.model_dir}/export/{self.p.export_name}', exist_ok=True)
+            os.makedirs(f'{p.model_dir}/export/{p.export_name}', exist_ok=True)
         except Exception as e:
             print(e)
 
@@ -187,10 +187,11 @@ class BestScoreExporter(tf.estimator.Exporter):
 class Feature(object):
     instance = None
 
-    def __init__(self):
-        self.p = app_conf.instance
+    def __init__(self, inp):
+        self.inp = inp
+        pass
 
-    def create_feature_columns(self):
+    def create_feature_columns(self, p):
         """Creates tensorFlow feature_column(s) based on the metadata of the input features.
 
         The tensorFlow feature_column objects are created based on the data types of the features
@@ -208,7 +209,7 @@ class Feature(object):
         """
 
         # load the numeric feature stats (if exists)
-        feature_stats = input.Input.instance.load_feature_stats()
+        feature_stats = self.inp.load_feature_stats(p)
 
         # all the numerical features including the input and constructed ones
         numeric_feature_names = set(metadata.INPUT_NUMERIC_FEATURE_NAMES + metadata.CONSTRUCTED_NUMERIC_FEATURE_NAMES)
@@ -394,5 +395,5 @@ class Feature(object):
 
         return deep_columns, wide_columns
 
-Feature.instance = Feature()
+# Feature.instance = Feature()
 

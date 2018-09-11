@@ -7,7 +7,7 @@ CloudMile project for google ml-specialist
 Rossmann data is a collection of time-series data for the prediction of sales in the next 6 months for each store. The greatest challenge is whether the model can accurately obtain the mean sales for each store, as well as the periodic and seasonal information.
 
 - From kaggle [Rossmann](https://www.kaggle.com/c/rossmann-store-sales)
-- See the [rossman.ipynb](rossmann/rossman.ipynb) for details
+- See the [rossman.ipynb](rossmann/rossmann.ipynb) for details
 
 ## Custom tf.estimator.Estimator for KKBOX Music Recommendation Engine
 

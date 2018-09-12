@@ -17,7 +17,6 @@ class Model(object):
         self.name = name
         self.model_dir = model_dir
         self.feature = None
-        pass
 
     def get_estimator(self, p, config:tf.estimator.RunConfig):
         """In this case, return `tf.estimator.DNNRegressor` or `tf.estimator.DNNLinearCombinedRegressor`,
@@ -32,7 +31,7 @@ class Model(object):
             est = tf.estimator.DNNRegressor(
                 hidden_units=p.mlp_layers,
                 feature_columns=deep_columns,
-                model_dir=self.model_dir,
+                # model_dir=self.model_dir,
                 label_dimension=1,
                 weight_column=None,
                 optimizer=tf.train.AdamOptimizer(p.learning_rate),
@@ -45,7 +44,7 @@ class Model(object):
             )
         else:
             est = tf.estimator.DNNLinearCombinedRegressor(
-                model_dir=self.model_dir,
+                # model_dir=self.model_dir,
                 linear_feature_columns=wide_columns,
                 linear_optimizer='Ftrl',
                 # linear_optimizer=tf.train.GradientDescentOptimizer(p.learning_rate),
@@ -63,10 +62,10 @@ class Model(object):
                 loss_reduction=tf.losses.Reduction.SUM
             )
 
-        self.logger.info(f'Use {est}')
+        self.logger.info('Use {}'.format(est))
         # Create directory for export, it will raise error if in GCS environment
         try:
-            os.makedirs(f'{p.model_dir}/export/{p.export_name}', exist_ok=True)
+            tf.gfile.MakeDirs('{}/export/{}'.format(p.job_dir, p.export_name))
         except Exception as e:
             print(e)
 
@@ -103,7 +102,7 @@ class Model(object):
             return metrics
 
         est = tf.contrib.estimator.add_metrics(est, metric_fn)
-        print(f"creating a regression model: {est}")
+        self.logger.info("creating a regression model: {}".format(est))
         return est
 
 class BestScoreExporter(tf.estimator.Exporter):
@@ -124,7 +123,7 @@ class BestScoreExporter(tf.estimator.Exporter):
         self.best = self.get_last_eval()
         self._exports_to_keep = 1
         self.export_result = None
-        self.logger.info(f'BestScoreExporter init, last best eval is {self.best}')
+        self.logger.info('BestScoreExporter init, last best eval is {}'.format(self.best))
 
     @property
     def name(self):
@@ -132,7 +131,7 @@ class BestScoreExporter(tf.estimator.Exporter):
 
     def get_last_eval(self):
         """Get the latest best score."""
-        path = f'{self.model_dir}/best.eval'
+        path = '{}/best.eval'.format(self.model_dir)
         if os.path.exists(path):
             return utils.read_pickle(path)
         else:
@@ -140,8 +139,8 @@ class BestScoreExporter(tf.estimator.Exporter):
 
     def save_last_eval(self, best:float):
         """Save the latest best score."""
-        self.logger.info(f'Persistent best eval: {best}')
-        path = f'{self.model_dir}/best.eval'
+        self.logger.info('Persistent best eval: {}'.format(best))
+        path = '{}/best.eval'.format(self.model_dir)
         utils.write_pickle(path, best)
 
     def export(self, estimator, export_path, checkpoint_path, eval_result,
@@ -157,22 +156,25 @@ class BestScoreExporter(tf.estimator.Exporter):
             the training.
         :return:
         """
-        self.logger.info(f'eval_result: {eval_result}')
+        self.logger.info('eval_result: {}'.format(eval_result))
         curloss = eval_result['rmspe']
         if self.best is None or self.best >= curloss:
             # Clean first, only keep the best weights
-            self.logger.info(f'clean export_path: {export_path}')
+            export_path = export_path.replace('\\', '/')
+            self.logger.info('clean export_path: {}'.format(export_path))
             try:
-                shutil.rmtree(export_path)
+                tf.gfile.DeleteRecursively(export_path)
+                # shutil.rmtree(export_path)
             except Exception as e:
                 self.logger.warn(e)
 
-            os.makedirs(export_path, exist_ok=True)
+            # os.makedirs(export_path, exist_ok=True)
+            tf.gfile.MakeDirs(export_path)
 
             self.best = curloss
             self.save_last_eval(self.best)
 
-            self.logger.info(f'nice eval loss: {curloss}, export to pb')
+            self.logger.info('nice eval loss: {}, export to pb'.format(curloss))
             self.export_result = estimator.export_savedmodel(
                 export_path,
                 self.serving_input_receiver_fn,
@@ -180,15 +182,22 @@ class BestScoreExporter(tf.estimator.Exporter):
                 as_text=self.as_text,
                 checkpoint_path=checkpoint_path)
         else:
-            self.logger.info(f'bad eval loss: {curloss}')
+            self.logger.info('bad eval loss: {}'.format(curloss))
 
         return self.export_result
 
 class Feature(object):
     instance = None
 
-    def __init__(self, inp):
-        self.inp = inp
+    @staticmethod
+    def get_instance():
+        if Feature.instance is None:
+            Feature.instance = Feature()
+        return Feature.instance
+
+
+    def __init__(self):
+        self.inp = None
         pass
 
     def create_feature_columns(self, p):
@@ -309,24 +318,24 @@ class Feature(object):
         # Deep columns
         for name in metadata.INPUT_CATEGORICAL_FEATURE_NAMES:
             if name not in dims:
-                feature_columns[f'{name}_indic'] = tf.feature_column.indicator_column(
+                feature_columns['{}_indic'.format(name)] = tf.feature_column.indicator_column(
                     feature_columns[name]
                 )
             else:
-                feature_columns[f'{name}_emb'] = tf.feature_column.embedding_column(
+                feature_columns['{}_emb'.format(name)] = tf.feature_column.embedding_column(
                     feature_columns[name], dims[name]
                 )
         # Wide columns
-        feature_columns[f'promo_datetime_cross'] = tf.feature_column.crossed_column(
+        feature_columns['promo_datetime_cross'] = tf.feature_column.crossed_column(
             ['promo', 'promo2', 'year', 'month', 'day', 'day_of_week'], hash_bucket_size=int(1e4))
 
-        feature_columns[f'promo_holiday_cross'] = tf.feature_column.crossed_column(
+        feature_columns['promo_holiday_cross'] = tf.feature_column.crossed_column(
             ['promo', 'promo2', 'state', 'state_holiday', 'school_holiday'], hash_bucket_size=int(1e4))
 
-        feature_columns[f'store_type_cross'] = tf.feature_column.crossed_column(
+        feature_columns['store_type_cross'] = tf.feature_column.crossed_column(
             ['state', 'store_type', 'assortment', 'day_of_week'], hash_bucket_size=int(1e4))
 
-        feature_columns[f'competition_cross'] = tf.feature_column.crossed_column(
+        feature_columns['competition_cross'] = tf.feature_column.crossed_column(
             ['competition_open_since_month', 'competition_open_since_year'], hash_bucket_size=int(1e4))
 
         return feature_columns
@@ -373,8 +382,8 @@ class Feature(object):
 
         # indicator_columns = []
 
-        # encode_one_hot = self.p.encode_one_hot
-        # as_wide_columns = self.p.as_wide_columns
+        # encode_one_hot = p.encode_one_hot
+        # as_wide_columns = p.as_wide_columns
         #
         # # if encode_one_hot=True, then categorical_columns are converted into indicator_column(s),
         # # and used as dense features in the deep part of the model.

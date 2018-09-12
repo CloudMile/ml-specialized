@@ -1,20 +1,19 @@
 import numpy as np, os, argparse
-import pandas as pd
+import pandas as pd, re
 
-from . import app_conf, service, input
-from . import model as m, utils
+from . import app_conf, service, input, model as m
+from . import utils
 
 class Ctrl(object):
     instance = None
     app_dir = ''
     logger = utils.logger(__name__)
 
-    def __init__(self, p):
-        self.p = p
-        self.input = input.Input(self.p)
-        self.service: service.Service = service.Service(self.p, self.input)
+    def __init__(self):
+        self.input = None # input.Input.instance
+        self.service = None # service.Service.instance
 
-    def set_client_secret(self):
+    def set_client_secret(self, p):
         """Set environment variable to api key path in order to
           access GCP service
 
@@ -22,9 +21,10 @@ class Ctrl(object):
         """
         from google.auth import environment_vars
 
+        p = self.merge_params(p)
         CREDENTIAL_NAME = environment_vars.CREDENTIALS
-        os.environ[CREDENTIAL_NAME] = self.p.api_key_path
-        self.logger.info(f"Set env variable [{CREDENTIAL_NAME}]")
+        os.environ[CREDENTIAL_NAME] = p.api_key_path
+        self.logger.info("Set env variable [{}]".format(CREDENTIAL_NAME))
         return self
 
     def prepare(self, p):
@@ -53,10 +53,11 @@ class Ctrl(object):
           - fpath: training file path
         :return: self
         """
-        data = self.input.clean(p.fpath, is_serving=False)
-        data = self.input.prepare(data, is_serving=False)
-        data = self.input.fit(data).transform(data, is_serving=False)
-        self.input.split(data)
+        p = self.merge_params(p)
+        data = self.input.clean(p, p.fpath, is_serving=False)
+        data = self.input.prepare(p, data, is_serving=False)
+        data = self.input.fit(p, data).transform(p, data, is_serving=False)
+        self.input.split(p, data)
         return self
 
     def transform(self, p):
@@ -67,9 +68,10 @@ class Ctrl(object):
           - fpath: training file path
         :return: Transformed data
         """
-        data = self.input.clean(p.fpath, is_serving=True)
-        data = self.input.prepare(data, is_serving=True)
-        data = self.input.transform(data, is_serving=True)
+        p = self.merge_params(p)
+        data = self.input.clean(p, p.fpath, is_serving=True)
+        data = self.input.prepare(p, data, is_serving=True)
+        data = self.input.transform(p, data, is_serving=True)
         return data
 
     def submit(self, p):
@@ -80,21 +82,27 @@ class Ctrl(object):
           - model_name: Specify which model to train
         :return: self
         """
-        commands = f"""
-            gcloud ml-engine jobs submit training {p.job_id} \
-                --job-dir {p.job_dir} \
-                --module-name trainer.ctrl \
-                --package-path trainer \
-                --region asia-east1 \
-                --scale-tier {p.scale_tier} \
-                --config config.yaml \
-                --runtime-version {p.runtime_version} \
+        p = self.merge_params(p)
+
+        commands = """
+            gcloud ml-engine jobs submit training {job_name} \
+                --job-dir={job_dir} \
+                --runtime-version=1.10 \
+                --region=asia-east1 \
+                --scale-tier={scale_tier} \
+                --module-name=trainer.ctrl \
+                --package-path=trainer  \
+                --config=config.yaml \
                 -- \
-                --train-steps {p.train_steps} \
-                --method train \
-                --job-id {p.job_id}
-        """.strip()
-        utils.cmd(commands)
+                --method=train \
+                --model-name={model_name} \
+                --train-steps={train_steps}
+        """.strip().format(**p.to_dict())
+
+        self.logger.info('submit cmd:\n{commands}'.format(
+            **{'commands': re.sub(r'\s{2,}', '\n  ', commands)}))
+        self.logger.info( utils.cmd(commands) )
+        # print( 'commands: {}'.format(commands) )
         return self
 
     def train(self, p):
@@ -105,11 +113,12 @@ class Ctrl(object):
           - model_name: Specify which model to train
         :return: self
         """
-        self.service.train(model_name=p.model_name, reset=p.reset)
+        p = self.merge_params(p)
+        self.service.train(p)
         return self
 
     def upload_model(self, p):
-        """Upload trained model to GCP ML-Engine
+        """Upload trained model to GCS
 
         :param p: Parameters
           - bucket_name: GCS unique bucket name
@@ -119,14 +128,15 @@ class Ctrl(object):
         """
         from google.cloud import storage
 
+        p = self.merge_params(p)
         bucket = storage.Client().get_bucket(p.bucket_name)
         # clean model dir
         for blob in bucket.list_blobs(prefix=p.prefix):
-            self.logger.info(f'delete {p.bucket_name}/{blob.name}')
+            self.logger.info('delete {}/{}'.format(p.bucket_name, blob.name))
             blob.delete()
         # upload
         for local, blob_name in utils.deep_walk(p.model_path, prefix=p.prefix):
-            self.logger.info(f'copy {local} to {blob_name}')
+            self.logger.info('copy {} to {}'.format(local, blob_name))
             bucket.blob(blob_name).upload_from_filename(local)
 
 
@@ -141,10 +151,11 @@ class Ctrl(object):
           - model_name: ML-Engine repository name
         :return: self
         """
+        p = self.merge_params(p)
         ml = self.service.find_ml()
-        self.service.create_model_rsc(ml, p.model_name)
-        self.service.clear_model_ver(ml, p.model_name)
-        self.service.create_model_ver(ml, p.model_name, p.deployment_uri)
+        self.service.create_model_rsc(p, ml, p.model_name)
+        self.service.clear_model_ver(p, ml, p.model_name)
+        self.service.create_model_ver(p, ml, p.model_name, p.deployment_uri)
         return self
 
 
@@ -155,11 +166,13 @@ class Ctrl(object):
           - datasource: DataFrame or file path to predict
           - is_src_file: Is datasource a DataFrame object or file path, True: DataFrame object, False: file path
           - model_name: Model name in `dnn` `neu_mf`
+          - job_dir: model checkpoint directory
         :return: Prediction result
         """
         from tensorflow.contrib import predictor
 
-        export_dir = self.service.find_latest_expdir(p.model_name)
+        p = self.merge_params(p)
+        export_dir = self.service.find_latest_expdir(p, p.model_name, p.job_dir)
         predict_fn = predictor.from_saved_model(export_dir, signature_def_key='predict')
 
         if p.is_src_file:
@@ -190,18 +203,63 @@ class Ctrl(object):
           - model_name: Model name in `dnn` `neu_mf`
         :return: Predicted result
         """
+        p = self.merge_params(p)
         datasource = p.datasource
         base = np.zeros(len(datasource))
         if not isinstance(datasource, pd.DataFrame):
             datasource = pd.DataFrame(datasource) # .to_dict('records')
 
         open_flag = datasource.open == '1'
-        preds = self.service.online_predict(datasource[open_flag].to_dict('records'), p.model_name)
+        preds = self.service.online_predict(p, datasource[open_flag].to_dict('records'), p.model_name)
         base[open_flag] = np.round(np.expm1(preds))
         return base
 
+    def merge_params(self, args=None):
+        """Merge received parameters with default settings in app_conf.py
 
-# Ctrl.instance = Ctrl()
+        :param args: Received parameters
+        :return: Merged parameters
+        """
+        if args is not None:
+            if not isinstance(args, dict):
+                args = args.to_dict() if isinstance(args, pd.Series) else args.__dict__
+
+            params = {}
+            params.update(app_conf.get_config(args.get("env")).__dict__)
+            params.update(args)
+            params = pd.Series(params)
+        else:
+            params = pd.Series(app_conf.get_config().__dict__)
+
+        return params
+
+def arrange_instances():
+    """Like a container, init all instance and set all dependencies
+
+    :param args: Received parameters
+    :return:
+    """
+    ctrl, svc, inp, feature = Ctrl(), service.Service(), input.Input(), m.Feature()
+
+    # ctrl.p = params
+    ctrl.service = svc
+    ctrl.input = inp
+    Ctrl.instance = ctrl
+
+    svc.inp = inp
+    # svc.p = params
+    service.Service.instance = svc
+
+    # inp.p = params
+    inp.feature = feature
+    input.Input.instance = inp
+
+    # feature.p = params
+    feature.inp = inp
+    m.Feature.instance = feature
+
+    return ctrl, svc, inp, feature
+
 
 # @api_view(['GET', 'POST'])
 # @permission_classes([CustomPermission])
@@ -213,23 +271,36 @@ class Ctrl(object):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
+
     parser.add_argument(
         '--env',
         default="cloud",
         help='string "cloud" for app_conf.CMLEConfig, else app_conf.Config',
     )
     parser.add_argument(
+        '--reset',
+        default=True,
+        type=bool,
+        help='if clear job dir',
+    )
+    parser.add_argument(
+        '--model-name',
+        default="deep",
+        help='',
+    )
+    parser.add_argument(
         '--method',
+        default='train',
         help='execution method in Controller object',
     )
     parser.add_argument(
         '--job-dir',
         help='where to put checkpoints',
     )
-    parser.add_argument(
-        '--job-id',
-        help='job id for training and deploy',
-    )
+    # parser.add_argument(
+    #     '--job-id',
+    #     help='job id for training and deploy',
+    # )
     parser.add_argument(
         '--train-steps',
         default=2308 * 8,
@@ -245,16 +316,33 @@ if __name__ == '__main__':
     parser.add_argument(
         '--runtime-version',
         default='1.10',
-        help='whether run on local machine instead of cloud',
+        help='specific the runtime version',
     )
+    parser.add_argument(
+        '--learning-rate',
+        default=0.001,
+        help='learning rate',
+    )
+    parser.add_argument(
+        '--drop-rate',
+        default=0.,
+        help='drop out rate',
+    )
+    parser.add_argument(
+        '--batch-size',
+        help='Batch size for each training step',
+        type=int,
+        default=200
+    )
+    # self.learning_rate = 0.005
+    # self.drop_rate = 0.3
 
     args = parser.parse_args()
 
-    params = {}
-    params.update(app_conf.get_config(args.env).__dict__)
-    params.update(args.__dict__)
-    params = pd.Series(params)
+    ctrl, svc, inp, feature = arrange_instances()
 
-    ctrl = Ctrl(params)
-    execution = getattr(ctrl, params.get('method'))
-    execution(params)
+    # from pprint import pprint
+    # pprint(params.to_dict())
+
+    execution = getattr(ctrl, args.method)
+    execution(args)

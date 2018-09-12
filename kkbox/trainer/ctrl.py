@@ -88,7 +88,7 @@ class Ctrl(object):
         return self
 
     def upload_model(self, p):
-        """Upload trained model to GCP ML-Engine
+        """Upload trained model to GCS
 
         :param p: Parameters
           - bucket_name: GCS unique bucket name

@@ -1,9 +1,6 @@
-import yaml, codecs, logging, os, pandas as pd, pickle
-import seaborn as sns
-
+import yaml, codecs, logging, os, pandas as pd, pickle, tensorflow as tf
 from logging import config
 from datetime import datetime
-from matplotlib import pyplot as plt
 
 class Logging(object):
     """Logging object"""
@@ -17,9 +14,9 @@ class Logging(object):
         :return: Object from `logging.getLogger`
         """
         if Logging.instance is None:
-            print(f'init logger instance ...')
+            print('init logger instance ...')
 
-            log_conf_path = f'{os.path.dirname(__file__)}/logging.yaml'
+            log_conf_path = '{}/logging.yaml'.format(os.path.dirname(__file__))
             with codecs.open(log_conf_path, 'r', 'utf-8') as r:
                 logging.config.dictConfig(yaml.load(r))
             Logging.instance = logging
@@ -49,10 +46,10 @@ def cmd(commands):
         outs.append(decode)
     return ''.join(outs)
 
-def find_latest_expdir(conf):
-    """Found latest export dir"""
-    export_dir = f'{conf.model_dir}/export/{conf.export_name}'
-    return f'{export_dir}/{sorted(os.listdir(export_dir))[-1]}'
+# def find_latest_expdir(conf):
+#     """Found latest export dir"""
+#     export_dir = '{}/export/{}'.format(conf.model_dir, conf.export_name)
+#     return '{}/{}'.format(export_dir, sorted(os.listdir(export_dir))[-1])
 
 def timestamp():
     return int(datetime.now().timestamp())
@@ -64,8 +61,8 @@ def deep_walk(path, prefix:str=None):
         prefix = ''
     for root, dirs, files in os.walk(path):
         sub_root = root.replace(path, '', 1).replace('\\', '/')
-        # print(f'root: {root}, sub_root: {sub_root}')
-        sub_root = f'{prefix}{sub_root}'
+
+        sub_root = '{}{}'.format(prefix, sub_root)
         for name in files:
             yield '/'.join([root, name]), '/'.join([sub_root, name])
 
@@ -74,14 +71,19 @@ def preview(fpath, heads=5):
         return chunk
 
 def read_pickle(path):
-    with open(path, 'rb') as fp:
+    # with open(path, 'rb') as fp:
+    with tf.gfile.Open(path, 'rb') as fp:
         return pickle.load(fp)
 
 def write_pickle(path, obj):
-    with open(path, 'wb') as fp:
+    # with open(path, 'wb') as fp:
+    with tf.gfile.Open(path, 'wb') as fp:
         pickle.dump(obj, fp)
 
 def heatmap(data, *cols, xtick=None, ytick=None, annot=True, fmt='.2f', figsize=None, label='sales'):
+    import seaborn as sns
+    from matplotlib import pyplot as plt
+
     figsize = figsize or (16, 4)
     f, axs = plt.subplots(1, 2, figsize=figsize)
 

@@ -789,7 +789,7 @@ class Input(object):
         sklearn.utils.shuffle
 
         Args:
-            inputs: Data with DataFrametype.
+            inputs: Data with DataFrame type.
             mode: tf.estimator.ModeKeys - either TRAIN or EVAL.
                 Used to determine whether or not to randomize the order of data.
             skip_header_lines: int set to non-zero in order to skip header lines in CSV files.

@@ -4,7 +4,7 @@ from tensorflow.python.ops import metrics_impl
 from tensorflow.python.eager import context
 from tensorflow.python.ops import math_ops
 
-from . import utils, app_conf, input, metadata
+from . import utils, input, metadata
 
 class Model(object):
     logger = utils.logger(__name__)
@@ -16,7 +16,7 @@ class Model(object):
         """
         self.name = name
         self.model_dir = model_dir
-        self.feature = None
+        self.feature = utils.get_instance(Feature)
 
     def construct_hidden_units(self, p):
         """ Create the number of hidden units in each layer
@@ -207,13 +207,6 @@ class BestScoreExporter(tf.estimator.Exporter):
 
 class Feature(object):
     instance = None
-
-    @staticmethod
-    def get_instance():
-        if Feature.instance is None:
-            Feature.instance = Feature()
-        return Feature.instance
-
 
     def __init__(self):
         self.inp = None

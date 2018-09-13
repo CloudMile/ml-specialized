@@ -10,8 +10,8 @@ class Ctrl(object):
     logger = utils.logger(__name__)
 
     def __init__(self):
-        self.input = None # input.Input.instance
-        self.service = None # service.Service.instance
+        self.input = utils.get_instance(input.Input)
+        self.service = utils.get_instance(service.Service)
 
     def set_client_secret(self, p):
         """Set environment variable to api key path in order to
@@ -236,32 +236,32 @@ class Ctrl(object):
 
         return params
 
-def arrange_instances():
-    """Like a container, init all instance and set all dependencies
-
-    :param args: Received parameters
-    :return:
-    """
-    ctrl, svc, inp, feature = Ctrl(), service.Service(), input.Input(), m.Feature()
-
-    # ctrl.p = params
-    ctrl.service = svc
-    ctrl.input = inp
-    Ctrl.instance = ctrl
-
-    svc.inp = inp
-    # svc.p = params
-    service.Service.instance = svc
-
-    # inp.p = params
-    inp.feature = feature
-    input.Input.instance = inp
-
-    # feature.p = params
-    feature.inp = inp
-    m.Feature.instance = feature
-
-    return ctrl, svc, inp, feature
+# def arrange_instances():
+#     """Like a container, init all instance and set all dependencies
+#
+#     :param args: Received parameters
+#     :return:
+#     """
+#     ctrl, svc, inp, feature = Ctrl(), service.Service(), input.Input(), m.Feature()
+#
+#     # ctrl.p = params
+#     ctrl.service = svc
+#     ctrl.input = inp
+#     Ctrl.instance = ctrl
+#
+#     svc.inp = inp
+#     # svc.p = params
+#     service.Service.instance = svc
+#
+#     # inp.p = params
+#     inp.feature = feature
+#     input.Input.instance = inp
+#
+#     # feature.p = params
+#     feature.inp = inp
+#     m.Feature.instance = feature
+#
+#     return ctrl, svc, inp, feature
 
 
 # @api_view(['GET', 'POST'])
@@ -388,7 +388,7 @@ if __name__ == '__main__':
     )
 
     args = parser.parse_args()
-    ctrl, svc, inp, feature = arrange_instances()
+    ctrl = utils.get_instance(Ctrl)
 
     # from pprint import pprint
     # pprint(params.to_dict())

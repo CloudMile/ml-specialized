@@ -1,8 +1,8 @@
-import tensorflow as tf, os, shutil
+import tensorflow as tf, pandas as pd
 from tensorflow.contrib.nn import alpha_dropout
 
 from . import app_conf, input, metadata
-from .utils import utils, flex
+from .utils import utils
 
 class Model(object):
     """DNN model for kkbox music recommendation"""
@@ -155,10 +155,14 @@ class Model(object):
         is_train = mode == tf.estimator.ModeKeys.TRAIN
         ret = []
         with tf.variable_scope(name):
+            factor_names = ('members_feature', 'songs_feature', 'context_features') if has_context else \
+                      ('members_feature', 'songs_feature')
             factors = (self.members_feature, self.songs_feature, self.context_features) if has_context else \
                       (self.members_feature, self.songs_feature)
-            for factor in factors:
-                for layer in self.construct_hidden_units(p, 'factor'):
+            for fc_name, factor in zip(factor_names, factors):
+                hidden_units = self.construct_hidden_units(p, 'factor')
+                self.logger.info('{} layers: {}'.format(fc_name, hidden_units))
+                for layer in hidden_units:
                     factor = tf.layers.dense(factor, layer, kernel_initializer=uniform_init_fn,
                                     kernel_constraint=tf.keras.constraints.max_norm(),
                                     # kernel_regularizer=tf.contrib.layers.l2_regularizer(p.reg_scale),
@@ -170,7 +174,7 @@ class Model(object):
                 ret.append(factor)
         return ret
 
-    def model_fn(self, features, labels, mode, p):
+    def model_fn(self, features, labels, mode, params):
         """Implement model graph
 
         :param features: A dictionary of tensors keyed by the feature name.
@@ -178,6 +182,7 @@ class Model(object):
         :param mode: The execution mode, as defined in tf.estimator.ModeKeys.
         :return: `tf.estimator.EstimatorSpec`
         """
+        p = pd.Series(params)
         is_train = mode == tf.estimator.ModeKeys.TRAIN
         self.logger.info('mode: {}, is_train: {}, '
                          'use dropout: {}'.format(mode, is_train, is_train and p.drop_rate > 0))
@@ -191,7 +196,10 @@ class Model(object):
         with tf.variable_scope("dnn", reuse=tf.AUTO_REUSE):
             net = tf.concat([self.members_feature, self.songs_feature, self.context_features], 1)
             self.logger.info('net: {}'.format(net))
-            for layer in self.construct_hidden_units(p, 'dnn'):
+
+            hidden_units = self.construct_hidden_units(p, 'dnn')
+            self.logger.info('DNN layers: {}'.format(hidden_units))
+            for layer in hidden_units:
                 net = tf.layers.dense(net, layer, kernel_initializer=uniform_init_fn,
                                       kernel_constraint=tf.keras.constraints.max_norm(),
                                       # kernel_regularizer=tf.contrib.layers.l2_regularizer(p.reg_scale),
@@ -316,12 +324,13 @@ class Model(object):
     def get_estimator(self, p, config:tf.estimator.RunConfig):
         """Customized tf.estimator.Estimator object
 
+        ;param p: Received parameter, type pd.Series
         :param config: see `tf.estimator.RunConfig`
         :return: `tf.estimator.Estimator`
         """
         self.logger.info('creating a custom Estimator')
         est = tf.estimator.Estimator(model_fn=self.model_fn, model_dir=self.model_dir,
-                                     config=config, params=p)
+                                     config=config, params=p.to_dict())
 
         # Create directory for export, it will raise error if in GCS environment
         try:
@@ -346,7 +355,7 @@ class Model(object):
             for i in range(p.num_layers)
         ]
 
-        self.logger.info("Hidden units structure: {}".format(hidden_units))
+        # self.logger.info("Hidden units structure: {}".format(hidden_units))
         return hidden_units
 
 class NeuMFModel(Model):
@@ -354,7 +363,7 @@ class NeuMFModel(Model):
     def __init__(self, *args, **kwargs):
         super(NeuMFModel, self).__init__(*args, **kwargs)
 
-    def model_fn(self, features, labels, mode, p):
+    def model_fn(self, features, labels, mode, params):
         """Implement model graph
 
         :param features: A dictionary of tensors keyed by the feature name.
@@ -362,6 +371,7 @@ class NeuMFModel(Model):
         :param mode: The execution mode, as defined in tf.estimator.ModeKeys.
         :return: `tf.estimator.EstimatorSpec`
         """
+        p = pd.Series(params)
         is_train = mode == tf.estimator.ModeKeys.TRAIN
         self.logger.info('mode: {}, is_train: {}, '
                          'use dropout: {}'.format(mode, is_train, is_train and p.drop_rate > 0))
@@ -374,7 +384,9 @@ class NeuMFModel(Model):
 
         with tf.variable_scope("mlp", reuse=tf.AUTO_REUSE):
             self.mlp_vector = tf.concat([mlp_members, mlp_songs, mlp_conext], 1)
-            for layer in self.construct_hidden_units(p, 'dnn'):
+            hidden_units = self.construct_hidden_units(p, 'dnn')
+            self.logger.info('MLP layers: {}'.format(hidden_units))
+            for layer in hidden_units:
                 self.mlp_vector = tf.layers.dense(self.mlp_vector, layer,
                                       kernel_initializer=uniform_init_fn,
                                       kernel_constraint=tf.keras.constraints.max_norm(),
@@ -385,7 +397,7 @@ class NeuMFModel(Model):
                     # self.mlp_vector = tf.layers.dropout(self.mlp_vector, p.drop_rate, training=is_train)
                     self.mlp_vector = alpha_dropout(self.mlp_vector, keep_prob=1 - p.drop_rate)
 
-        mf_members, mf_songs = self.factor_encode(uniform_init_fn, has_context=False, mode=mode, name='factor_mf')
+        mf_members, mf_songs = self.factor_encode(p, uniform_init_fn, has_context=False, mode=mode, name='factor_mf')
         with tf.variable_scope("mf", reuse=tf.AUTO_REUSE):
             self.mf_vector = tf.multiply(mf_members, mf_songs)
             # self.mf_vector = tf.nn.relu(tf.layers.batch_normalization(self.mf_vector))
@@ -499,9 +511,11 @@ class BestScoreExporter(tf.estimator.Exporter):
         :return:
         """
         self.logger.info('eval_result: {}'.format(eval_result))
+
         curloss = eval_result['loss']
         if self.best is None or self.best >= curloss:
             # Clean first, only keep the best weights
+            export_path = export_path.replace('\\', '/')
             self.logger.info('clean export_path: {}'.format(export_path))
             try:
                 tf.gfile.DeleteRecursively(export_path)

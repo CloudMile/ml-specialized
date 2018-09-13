@@ -28,6 +28,12 @@ def logger(name):
     """Short path of Logging.logger"""
     return Logging.get_logger(name)
 
+def get_instance(cls, *args, **kwargs):
+    """Simulate the singleton pattern"""
+    if cls.instance is None:
+        cls.instance = cls(*args, **kwargs)
+    return cls.instance
+
 def cmd(commands):
     """Execute command in python code"""
     import subprocess

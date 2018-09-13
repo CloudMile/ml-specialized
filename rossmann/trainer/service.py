@@ -3,7 +3,7 @@ from oauth2client.client import GoogleCredentials
 from googleapiclient import discovery
 from datetime import datetime
 
-from . import app_conf, input, model as m, utils, metadata
+from . import input, model as m, utils, metadata
 
 class Service(object):
     """Business logic object, all kind of logic write down here to called by controller,
@@ -14,7 +14,7 @@ class Service(object):
     logger = utils.logger(__name__)
 
     def __init__(self):
-        self.inp = None
+        self.inp = utils.get_instance(input.Input)
 
     def train_ridge(self, p):
         """Train model with scikit-learn package, see `sklearn.linear_model.Ridge` for
@@ -111,7 +111,7 @@ class Service(object):
         self.logger.info("Model_name: {}".format(p.model_name))
         self.logger.info("Model directory: {}".format(run_config.model_dir))
         model = m.Model(model_dir=model_dir, name=p.model_name)
-        model.feature = m.Feature()
+        model.feature = utils.get_instance(m.Feature)
         model.feature.inp = self.inp
 
         exporter = m.BestScoreExporter(

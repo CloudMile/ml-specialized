@@ -142,25 +142,25 @@ class CatgMapper(BaseMapper):
         return dim_map[int(np.digitize(log_n_uniq, bins))]
 
     def init_check(self):
-        if self.vocabs is not None and self.vocabs_path is not None:
-            raise ValueError("[{}]: choose either vocab or vocab_path, can't specified both"
-                             .format(self.name))
-        if self.vocabs is not None:
-            self.classes_ = list(pd.Series(self.vocabs).unique())
-            self.gen_mapper()
-            self.freeze_ = True
-
-        if self.vocabs_path is not None:
-            from . import flex
-            blob = flex.io(self.vocabs_path)
-            assert blob.exists(), "[{}]: can't find vocabs file [{}]"\
-                                  .format(self.name, self.vocabs_path)
-            self.logger.info('[{}] fetch vocab [{}] '.format(self.name, self.vocabs_path))
-            with blob.as_reader('r') as f:
-                clazz = pd.Series(f.stream.readlines()).map(str.strip).unique()
-            self.classes_ = list(clazz[clazz != ''])
-            self.gen_mapper()
-            self.freeze_ = True
+        # if self.vocabs is not None and self.vocabs_path is not None:
+        #     raise ValueError("[{}]: choose either vocab or vocab_path, can't specified both"
+        #                      .format(self.name))
+        # if self.vocabs is not None:
+        #     self.classes_ = list(pd.Series(self.vocabs).unique())
+        #     self.gen_mapper()
+        #     self.freeze_ = True
+        #
+        # if self.vocabs_path is not None:
+        #     from . import flex
+        #     blob = flex.io(self.vocabs_path)
+        #     assert blob.exists(), "[{}]: can't find vocabs file [{}]"\
+        #                           .format(self.name, self.vocabs_path)
+        #     self.logger.info('[{}] fetch vocab [{}] '.format(self.name, self.vocabs_path))
+        #     with blob.as_reader('r') as f:
+        #         clazz = pd.Series(f.stream.readlines()).map(str.strip).unique()
+        #     self.classes_ = list(clazz[clazz != ''])
+        #     self.gen_mapper()
+        #     self.freeze_ = True
         return self
 
     def partial_fit(self, y):

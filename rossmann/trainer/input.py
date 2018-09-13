@@ -4,7 +4,7 @@ import json, multiprocessing, shutil
 from collections import OrderedDict, defaultdict
 from datetime import datetime, timedelta
 
-from . import metadata, app_conf, utils,  model as m
+from . import metadata, utils,  model as m
 
 class Input(object):
     """Handle all logic about data pipeline.
@@ -26,7 +26,8 @@ class Input(object):
 
     def __init__(self):
         self.p = None # app_conf.get_config()
-        self.feature = m.Feature.get_instance()
+        self.feature = utils.get_instance(m.Feature)
+        self.feature.inp = self
         self.serving_fn = {
             'json': getattr(self, 'json_serving_input_fn')
             # 'csv': getattr(self, 'csv_serving_fn')

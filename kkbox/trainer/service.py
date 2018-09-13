@@ -17,9 +17,8 @@ class Service(object):
     def __init__(self):
         self.inp = utils.get_instance(input.Input)
 
-    def train(self, p, train_fn=None, tr_hook=None, valid_fn=None, vl_hook=None,
-              reset=True, model_name='dnn'):
-        """Train tensorflow model with tf.estimator.Estimator object
+    def train(self, p, train_fn=None, tr_hook=None, valid_fn=None, vl_hook=None):
+        """Train model with tf.estimator.Estimator object
 
         Train spec: wrap train_fn or training hook(optional)
         Eval spec: wrap valid_fn or validation hook(optional)
@@ -36,21 +35,16 @@ class Service(object):
             for k, v in p.items():
                 self.logger.info('{}: {}'.format(k, v))
 
-        # todo hack
-
-        return
-
-        self.check_model_name(model_name)
+        self.check_model_name(p.model_name)
         model_dir = p.job_dir
 
-        if reset and tf.gfile.Exists(model_dir):
+        if p.reset and tf.gfile.Exists(model_dir):
             self.logger.info("Delete job_dir {} to avoid re-use".format(model_dir))
             tf.gfile.DeleteRecursively(model_dir)
         tf.gfile.MakeDirs(model_dir)
 
-
-        self.logger.info("Model: {}, model_dir: {}".format(model_name, model_dir))
-        model = m.Model(model_dir=model_dir) if model_name == 'dnn' else \
+        self.logger.info("Model: {}, model_dir: {}".format(p.model_name, model_dir))
+        model = m.Model(model_dir=model_dir) if p.model_name == 'dnn' else \
                 m.NeuMFModel(model_dir=model_dir)
         model.mapper = utils.read_pickle('{}/stats.pkl'.format(p.fitted_path))
 
@@ -68,7 +62,7 @@ class Service(object):
             model_dir=model_dir
         )
 
-        self.logger.info('Use model {}: {}'.format(model_name, model))
+        self.logger.info('Use model {}: {}'.format(p.model_name, model))
         self.logger.info("Model Directory: {}".format(run_config.model_dir))
 
         exporter = m.BestScoreExporter(
@@ -81,7 +75,7 @@ class Service(object):
         # tr_hook = input.IteratorInitializerHook()
         if not train_fn:
             self.logger.info('read train file into memory')
-            with tf.gfile.FastGFile(p.train_files, "r") as fp:
+            with tf.gfile.FastGFile(p.train_files, "rb") as fp:
                 tr = pd.read_pickle(fp)
             train_fn, tr_hook = self.inp.generate_input_fn(
                 inputs=tr,
@@ -101,7 +95,7 @@ class Service(object):
         # vl_hook = input.IteratorInitializerHook()
         if not valid_fn:
             self.logger.info('read valid file into memory')
-            with tf.gfile.FastGFile(p.valid_files, "r") as fp:
+            with tf.gfile.FastGFile(p.valid_files, "rb") as fp:
                 vl = pd.read_pickle(fp)
             valid_fn, vl_hook = self.inp.generate_input_fn(
                 inputs=vl,

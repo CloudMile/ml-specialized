@@ -41,7 +41,7 @@ class Config(object):
         self.learning_rate = 0.001
         self.drop_rate = 0.3
         self.first_mlp_layer_size = 512
-        self.first_factor_layers_size = 32
+        self.first_factor_layer_size = 32
 
         # Training config
         self.job_dir = '{}/neu_mf'.format(self.model_path)

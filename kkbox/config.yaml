@@ -1,0 +1,47 @@
+trainingInput:
+  scaleTier: BASIC_GPU
+  pythonVersion: "3.5"
+  hyperparameters:
+    goal: MAXIMIZE
+    hyperparameterMetricTag: auc
+    enableTrialEarlyStopping: True
+    maxTrials: 10
+    # maxParallelTrials: 4
+    params:
+    - parameterName: learning-rate
+      type: DOUBLE
+      minValue: 0.0005
+      maxValue: 0.01
+      scaleType: UNIT_LOG_SCALE
+    - parameterName: num-layers
+      type: INTEGER
+      minValue: 2
+      maxValue: 4
+      scaleType: UNIT_LINEAR_SCALE
+    - parameterName: drop_rate
+      type: DOUBLE
+      minValue: 0.3
+      maxValue: 0.5
+      scaleType: UNIT_LINEAR_SCALE
+    - parameterName: embedding-size
+      type: DISCRETE
+      discreteValues:
+      - 16
+      - 20
+      - 32
+    - parameterName: first-mlp-layer-size
+      type: DISCRETE
+      discreteValues:
+      - 128
+      - 256
+      - 512
+    - parameterName: first-factor-layer-size
+      type: DISCRETE
+      discreteValues:
+      - 32
+      - 64
+    - parameterName: scale-factor
+      type: DOUBLE
+      minValue: 0.5
+      maxValue: 0.7
+      scaleType: UNIT_LINEAR_SCALE

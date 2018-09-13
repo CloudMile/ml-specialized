@@ -89,14 +89,17 @@ class Ctrl(object):
                 --job-dir={job_dir} \
                 --runtime-version=1.10 \
                 --region=asia-east1 \
-                --scale-tier={scale_tier} \
                 --module-name=trainer.ctrl \
                 --package-path=trainer  \
                 --config=config.yaml \
                 -- \
                 --method=train \
                 --model-name={model_name} \
-                --train-steps={train_steps}
+                --train-steps={train_steps} \
+                --verbosity={verbosity} \
+                --save-checkpoints-steps={save_checkpoints_steps} \
+                --throttle-secs={throttle_secs} \
+                --reset={reset}
         """.strip().format(**p.to_dict())
 
         self.logger.info('submit cmd:\n{commands}'.format(
@@ -281,7 +284,7 @@ if __name__ == '__main__':
         '--reset',
         default=True,
         type=bool,
-        help='if clear job dir',
+        help='whether to clear job dir',
     )
     parser.add_argument(
         '--model-name',
@@ -311,7 +314,7 @@ if __name__ == '__main__':
         '--valid-steps',
         default=989,
         type=int,
-        help='max train steps',
+        help='max eval steps',
     )
     parser.add_argument(
         '--runtime-version',
@@ -319,26 +322,72 @@ if __name__ == '__main__':
         help='specific the runtime version',
     )
     parser.add_argument(
-        '--learning-rate',
-        default=0.001,
-        help='learning rate',
-    )
-    parser.add_argument(
-        '--drop-rate',
-        default=0.,
-        help='drop out rate',
-    )
-    parser.add_argument(
         '--batch-size',
         help='Batch size for each training step',
         type=int,
         default=200
     )
-    # self.learning_rate = 0.005
-    # self.drop_rate = 0.3
+    parser.add_argument(
+        '--verbosity',
+        choices=[
+            'DEBUG',
+            'ERROR',
+            'FATAL',
+            'INFO',
+            'WARN'
+        ],
+        default='INFO',
+    )
+    parser.add_argument(
+        '--learning-rate',
+        default=0.001,
+        type=float,
+        help='learning rate',
+    )
+    parser.add_argument(
+        '--drop-rate',
+        default=0.,
+        type=float,
+        help='drop out rate',
+    )
+    parser.add_argument(
+        '--embedding-size',
+        help='Number of embedding dimensions for store only',
+        default=16,
+        type=int
+    )
+    parser.add_argument(
+        '--first-layer-size',
+        help='Number of nodes in the first layer of the DNN',
+        default=128,
+        type=int
+    )
+    parser.add_argument(
+        '--num-layers',
+        help='Number of layers in the DNN',
+        default=3,
+        type=int
+    )
+    parser.add_argument(
+        '--scale-factor',
+        help='How quickly should the size of the layers in the DNN decay',
+        default=0.7,
+        type=float
+    )
+    parser.add_argument(
+        '--throttle-secs',
+        help='How long to wait before running the next evaluation',
+        default=60,
+        type=int
+    )
+    parser.add_argument(
+        '--save-checkpoints-steps',
+        help='save checkpoint every steps',
+        default=2308,
+        type=int
+    )
 
     args = parser.parse_args()
-
     ctrl, svc, inp, feature = arrange_instances()
 
     # from pprint import pprint

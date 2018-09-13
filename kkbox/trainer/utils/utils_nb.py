@@ -1,9 +1,11 @@
-import pandas as pd, seaborn as sns, re
+import pandas as pd
 
 from sklearn.metrics import auc, roc_curve
-from matplotlib import pyplot as plt
+
 
 def draw_roc_curve(y, pred):
+    from matplotlib import pyplot as plt
+
     fprRf, tprRf, _ = roc_curve(y, pred, pos_label=1)
     auc_scr = auc(fprRf, tprRf)
     print("auc:", auc_scr)
@@ -39,6 +41,9 @@ def flatten(data, uni_cols:list, m_col, target):
 
 
 def heatmap(data, *cols, xtick=None, ytick=None, annot=True, fmt='.2f', figsize=None):
+    import seaborn as sns
+    from matplotlib import pyplot as plt
+
     figsize = figsize or (16, 4)
     f, axs = plt.subplots(1, 2, figsize=figsize)
 

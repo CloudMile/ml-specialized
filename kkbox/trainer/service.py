@@ -1,9 +1,9 @@
-import tensorflow as tf, shutil, os, pandas as pd, numpy as np
+import tensorflow as tf, pandas as pd, numpy as np
 from oauth2client.client import GoogleCredentials
 from googleapiclient import discovery
 from datetime import datetime
 
-from . import app_conf, input, model as m
+from . import input, model as m
 from .utils import utils
 
 class Service(object):
@@ -15,10 +15,9 @@ class Service(object):
     logger = utils.logger(__name__)
 
     def __init__(self):
-        self.p: app_conf.Config = app_conf.instance
-        self.inp: input.Input = input.Input.instance
+        self.inp = utils.get_instance(input.Input)
 
-    def train(self, train_fn=None, tr_hook=None, valid_fn=None, vl_hook=None,
+    def train(self, p, train_fn=None, tr_hook=None, valid_fn=None, vl_hook=None,
               reset=True, model_name='dnn'):
         """Train tensorflow model with tf.estimator.Estimator object
 
@@ -33,19 +32,27 @@ class Service(object):
         :param model_name: Model name in `dnn` `neu_mf`
         :return: self
         """
+        if isinstance(p, pd.Series):
+            for k, v in p.items():
+                self.logger.info('{}: {}'.format(k, v))
+
+        # todo hack
+
+        return
+
         self.check_model_name(model_name)
-        model_dir = self.p.model_dir if model_name == 'dnn' else self.p.neu_mf_model_dir
+        model_dir = p.job_dir
 
         if reset and tf.gfile.Exists(model_dir):
-            self.logger.info(f"Delete job_dir {model_dir} to avoid re-use")
-            shutil.rmtree(model_dir, ignore_errors=True)
-            # tf.gfile.DeleteRecursively(self.p.model_dir)
-        os.makedirs(model_dir, exist_ok=True)
+            self.logger.info("Delete job_dir {} to avoid re-use".format(model_dir))
+            tf.gfile.DeleteRecursively(model_dir)
+        tf.gfile.MakeDirs(model_dir)
 
 
-        self.logger.info(f"Model: {model_name}, model_dir: {model_dir}")
-        model = m.Model(model_dir=self.p.model_dir) if model_name == 'dnn' else \
-                m.NeuMFModel(model_dir=self.p.neu_mf_model_dir)
+        self.logger.info("Model: {}, model_dir: {}".format(model_name, model_dir))
+        model = m.Model(model_dir=model_dir) if model_name == 'dnn' else \
+                m.NeuMFModel(model_dir=model_dir)
+        model.mapper = utils.read_pickle('{}/stats.pkl'.format(p.fitted_path))
 
         sess_config = tf.ConfigProto()
         sess_config.gpu_options.allow_growth = True
@@ -54,83 +61,85 @@ class Service(object):
         run_config = tf.estimator.RunConfig(
             session_config=sess_config,
             # tf_random_seed=878787,
-            log_step_count_steps=self.p.log_step_count_steps,
-            save_checkpoints_steps=self.p.save_checkpoints_steps,
+            log_step_count_steps=p.log_step_count_steps,
+            save_checkpoints_steps=p.save_checkpoints_steps,
             # save_checkpoints_secs=HYPER_PARAMS.eval_every_secs,
-            keep_checkpoint_max=self.p.keep_checkpoint_max,
+            keep_checkpoint_max=p.keep_checkpoint_max,
             model_dir=model_dir
         )
 
-        self.logger.info(f'Use model {model_name}: {model}')
-        self.logger.info(f"Model Directory: {run_config.model_dir}")
+        self.logger.info('Use model {}: {}'.format(model_name, model))
+        self.logger.info("Model Directory: {}".format(run_config.model_dir))
 
         exporter = m.BestScoreExporter(
-            self.p.export_name,
-            self.inp.serving_fn[self.p.serving_format],
+            p.export_name,
+            self.inp.serving_fn[p.serving_format],
             model_dir=model_dir,
             as_text=False  # change to true if you want to export the model as readable text
         )
         # Train spec
         # tr_hook = input.IteratorInitializerHook()
         if not train_fn:
-            self.logger.info(f'read train file into memory')
-            tr = pd.read_pickle(self.p.train_files)
+            self.logger.info('read train file into memory')
+            with tf.gfile.FastGFile(p.train_files, "r") as fp:
+                tr = pd.read_pickle(fp)
             train_fn, tr_hook = self.inp.generate_input_fn(
                 inputs=tr,
                 mode=tf.estimator.ModeKeys.TRAIN,
                 skip_header_lines=0,
-                num_epochs=self.p.num_epochs,
-                batch_size=self.p.batch_size,
+                num_epochs=p.num_epochs,
+                batch_size=p.batch_size,
                 shuffle=True,
                 multi_threading=True
             )
         train_spec = tf.estimator.TrainSpec(
             train_fn,
-            max_steps=self.p.train_steps,
+            max_steps=p.train_steps,
             hooks=[tr_hook]
         )
         # Valid spec
         # vl_hook = input.IteratorInitializerHook()
         if not valid_fn:
-            self.logger.info(f'read valid file into memory')
-            vl = pd.read_pickle(self.p.valid_files)
+            self.logger.info('read valid file into memory')
+            with tf.gfile.FastGFile(p.valid_files, "r") as fp:
+                vl = pd.read_pickle(fp)
             valid_fn, vl_hook = self.inp.generate_input_fn(
                 inputs=vl,
                 mode=tf.estimator.ModeKeys.EVAL,
                 skip_header_lines=0,
-                num_epochs=self.p.num_epochs,
-                batch_size=self.p.batch_size,
+                num_epochs=p.num_epochs,
+                batch_size=p.batch_size,
                 shuffle=False,
                 multi_threading=True
             )
         eval_spec = tf.estimator.EvalSpec(
             valid_fn,
-            steps=self.p.valid_steps,
+            steps=p.valid_steps,
             exporters=[exporter],
             name='estimator-eval',
-            throttle_secs=self.p.eval_every_secs,
+            throttle_secs=p.throttle_secs,
             hooks=[vl_hook]
         )
 
         # train and evaluate
         tf.estimator.train_and_evaluate(
-            model.get_estimator(run_config),
+            model.get_estimator(p, run_config),
             train_spec,
             eval_spec
         )
         return self
 
-    def find_latest_expdir(self, model_name):
+    def find_latest_expdir(self, p, model_name):
         """Find latest exported directory by specified model name
 
         :param model_name: Model name in `dnn` `neu_mf`
         :return: Latest directory path
         """
         self.check_model_name(model_name)
-        model_dir = self.p.neu_mf_model_dir if model_name == 'neu_mf' else self.p.model_dir
+        model_dir = p.job_dir
         # Found latest export dir
-        export_dir = f'{model_dir}/export/{self.p.export_name}'
-        return f'{export_dir}/{sorted(os.listdir(export_dir))[-1]}'
+        export_dir = '{}/export/{}'.format(model_dir, p.export_name)
+        return '{}/{}'.format(export_dir, sorted(tf.gfile.ListDirectory(export_dir))[-1])
 
     def check_model_name(self, model_name):
         """Check if model name in (`dnn` `neu_mf`)
@@ -140,15 +149,15 @@ class Service(object):
         """
         assert model_name in ('dnn', 'neu_mf'), "model_name only support ('dnn', 'neu_mf')"
 
-    def read_transformed(self, fpath):
+    def read_transformed(self, p, fpath):
         """Same as `Ctrl.instance.transform`, transform data to model recognized format in serving period
 
         :param fpath: Raw serving file path
         :return: Transformed data
         """
-        data = self.inp.clean(fpath, is_serving=True)
-        data = self.inp.prepare(data, is_serving=True)
-        return self.inp.transform(data, is_serving=True)
+        data = self.inp.clean(p, fpath, is_serving=True)
+        data = self.inp.prepare(p, data, is_serving=True)
+        return self.inp.transform(p, data, is_serving=True)
 
     def find_ml(self):
         """Return GCP ML service
@@ -158,14 +167,14 @@ class Service(object):
         credentials = GoogleCredentials.get_application_default()
         return discovery.build('ml', 'v1', credentials=credentials)
 
-    def create_model_rsc(self, ml, model_name):
+    def create_model_rsc(self, p, ml, model_name):
         """Create model repository on GCP ML-Engine
 
         :param ml: GCP ML service object
         :param model_name: Model name to put on ML-Engine repository
         :return: self
         """
-        proj_uri = f'projects/{self.p.project_id}'
+        proj_uri = 'projects/{}'.format(p.project_id)
         try:
             ml.projects().models().create(
                 parent=proj_uri, body={'name': model_name, 'onlinePredictionLogging': True}
@@ -174,14 +183,14 @@ class Service(object):
             self.logger.warn(e)
         return self
 
-    def clear_model_ver(self, ml, model_name):
+    def clear_model_ver(self, p, ml, model_name):
         """Clear all model versions in repository
 
         :param ml: GCP ML service object
         :param model_name: Model name to put on ML-Engine repository
         :return: self
         """
-        model_rsc = f'projects/{self.p.project_id}/models/{model_name}'
+        model_rsc = 'projects/{}/models/{}'.format(p.project_id, model_name)
         vdict = ml.projects().models().versions().list(parent=model_rsc).execute()
 
         def delete(m):
@@ -201,7 +210,7 @@ class Service(object):
                     delete(m)
         return self
 
-    def create_model_ver(self, ml, model_name, deployment_uri):
+    def create_model_ver(self, p, ml, model_name, deployment_uri):
         """Create a new model version with current datetime as version name
 
         :param ml: GCP ML service object
@@ -209,11 +218,11 @@ class Service(object):
         :param deployment_uri: GCS path to locate the saved model
         :return: self
         """
-        model_uri = f'projects/{self.p.project_id}/models/{model_name}'
+        model_uri = 'projects/{}/models/{}'.format(p.project_id, model_name)
         now = datetime.now().strftime('%Y_%m_%d__%H_%M_%S')
-        version = f'v{now}' # f'v{utils.timestamp()}'
+        version = 'v{}'.format(now)
 
-        self.logger.info(f'create model {model_name} from {deployment_uri}')
+        self.logger.info('create model {} from {}'.format(model_name, deployment_uri))
         ml.projects().models().versions().create(
             parent=model_uri,
             body={
@@ -257,10 +266,9 @@ class Service(object):
                 typ = 'int32' if dtype[m_col] == int else 'float32'
                 pipe[m_col] = pad(pipe[m_col], padding='post', dtype=typ).tolist()
 
-            # self.logger.info(f"padded_batch take time: {datetime.now() - s}")
             yield pipe
 
-    def online_predict(self, datasource, model_name):
+    def online_predict(self, p, datasource, model_name):
         """Online prediction with ML Engine
 
         :param datasource: Array list contains many dict objects
@@ -268,11 +276,10 @@ class Service(object):
             GCP will get default version
         :return: Prediction result
         """
-        model_uri = f'projects/{self.p.project_id}/models/{model_name}'
+        model_uri = 'projects/{}/models/{}'.format(p.project_id, model_name)
         ml = self.find_ml()
 
         result = ml.projects().predict(name=model_uri, body={'instances': datasource}).execute()
         return [rec.get('predictions')[0] for rec in result.get('predictions')]
 
-Service.instance = Service()
 

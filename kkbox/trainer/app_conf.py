@@ -1,63 +1,96 @@
 import os
 
 class Config(object):
-    # Base
-    project_id = 'ml-team-cloudmile'
-    api_key_path = 'C:/Users/gary/client_secret.json'
-    base_dir = os.path.dirname(os.path.dirname(__file__))
-    data_path = f'{base_dir}/data'
-    proc_path = f'{data_path}/processed'
-    model_path = f'{base_dir}/models'
+    def __init__(self):
+        # Base
+        self.project_id = 'ml-team-cloudmile'
+        self.api_key_path = 'C:/Users/gary/client_secret.json'
+        self.base_dir = os.path.dirname(os.path.dirname(__file__)).replace('\\', '/')
+        self.data_path = '{}/data'.format(self.base_dir)
+        self.proc_path = '{}/processed'.format(self.data_path)
+        self.model_path = '{}/models'.format(self.base_dir)
 
-    # Original data path
-    raw_train = f'{data_path}/train.csv'
-    raw_test = f'{data_path}/test.csv'
-    raw_members = f'{data_path}/members.csv'
-    raw_songs = f'{data_path}/songs.csv'
-    raw_song_extra_info = f'{data_path}/song_extra_info.csv'
+        # Original data path
+        self.raw_train = '{}/train.csv'.format(self.data_path)
+        self.raw_test = '{}/test.csv'.format(self.data_path)
+        self.raw_members = '{}/members.csv'.format(self.data_path)
+        self.raw_songs = '{}/songs.csv'.format(self.data_path)
+        self.raw_song_extra_info = '{}/song_extra_info.csv'.format(self.data_path)
 
-    # Processed data path
-    cleaned_path = f'{proc_path}/cleaned'
-    prepared_path = f'{proc_path}/prepared'
-    fitted_path = f'{proc_path}/fitted'
-    transformed_path = f'{proc_path}/transformed'
+        # Processed data path
+        self.cleaned_path = '{}/cleaned'.format(self.proc_path)
+        self.prepared_path = '{}/prepared'.format(self.proc_path)
+        self.fitted_path = '{}/fitted'.format(self.proc_path)
+        self.transformed_path = '{}/transformed'.format(self.proc_path)
 
-    train_files = f'{transformed_path}/tr.pkl'
-    valid_files = f'{transformed_path}/vl.pkl'
-    test_files = f'{transformed_path}/te.pkl'
+        self.train_files = '{}/tr.pkl'.format(self.transformed_path)
+        self.valid_files = '{}/vl.pkl'.format(self.transformed_path)
+        self.test_files = '{}/te.pkl'.format(self.transformed_path)
 
-    # Data prepare relevant parameter
-    valid_size = 0.1
-    model_dir = f'{model_path}/kkbox_dnn_adam_max_norm'
-    neu_mf_model_dir = f'{model_path}/kkbox_neumf_adam_max_norm'
-    # Dir name in {model_dir}/export
-    export_name = 'estimator'
+        # Data prepare relevant parameter
+        self.valid_size = 0.1
+        self.job_dir = '{}/kkbox'.format(self.model_path)
+        # Dir name in {model_dir}/export
+        self.export_name = 'estimator'
 
-    # Hyper parameter
-    keep_checkpoint_max = 5
-    log_step_count_steps = 100
-    train_steps = 4358 * 1
-    valid_steps = 492
-    batch_size = 1000
-    # Number of loops for dataset
-    num_epochs = 1
-    save_checkpoints_steps = 500
-    eval_every_secs = 1000
-    # Recommend to assign to same as train_steps, for tf.train.cosine_decay,
-    # and tune the alpha hyper param to control the lr won't down to zero.
-    cos_decay_steps = train_steps
-    initial_learning_rate = 0.001
-    mlp_layers = [512, 128, 64]
-    factor_layers = [32, 16]
-    drop_rate = 0
-    # momentum = 0.99
-    reg_scale = 0
+        # Hyper parameter
+        self.embedding_size = 16
+        self.first_layer_size = 128
+        self.num_layers = 3
+        self.scale_factor = 0.7
+        self.learning_rate = 0.001
+        self.drop_rate = 0.3
+        self.first_mlp_layer_size = 512
+        self.first_factor_layers_size = 32
 
-    # Serving relevant
-    serving_format = 'json' # [json]
+        # Training config
+        self.job_dir = '{}/neu_mf'.format(self.model_path)
+        self.keep_checkpoint_max = 5
+        self.log_step_count_steps = 100
+        self.train_steps = 4358 * 1
+        self.valid_steps = 492
+        # Recommend to assign to same as train_steps, for tf.train.cosine_decay,
+        # and tune the alpha hyper param to control the lr won't down to zero.
+        self.cos_decay_steps = self.train_steps
+        self.batch_size = 1000
+        self.num_epochs = None
+        self.verbosity = 'INFO'
+        self.throttle_secs = 600
+        self.save_checkpoints_steps = 500
 
-instance = Config()
+        # Serving relevant
+        self.serving_format = 'json'
 
-import tensorflow as tf
+class CMLEConfig(Config):
+    instance = None
+
+    def __init__(self):
+        super(CMLEConfig, self).__init__()
+        self.base_dir = 'gs://ml-specialized/kkbox'
+        self.data_path = '{}/data'.format(self.base_dir)
+        self.proc_path = '{}/processed'.format(self.data_path)
+        self.model_path = '{}/models'.format(self.base_dir)
+
+        # Original data path
+        self.raw_train = '{}/train.csv'.format(self.data_path)
+        self.raw_test = '{}/test.csv'.format(self.data_path)
+        self.raw_members = '{}/members.csv'.format(self.data_path)
+        self.raw_songs = '{}/songs.csv'.format(self.data_path)
+        self.raw_song_extra_info = '{}/song_extra_info.csv'.format(self.data_path)
+
+        # Processed data path
+        self.cleaned_path = '{}/cleaned'.format(self.proc_path)
+        self.prepared_path = '{}/prepared'.format(self.proc_path)
+        self.fitted_path = '{}/fitted'.format(self.proc_path)
+        self.transformed_path = '{}/transformed'.format(self.proc_path)
+
+        self.train_files = '{}/tr.pkl'.format(self.transformed_path)
+        self.valid_files = '{}/vl.pkl'.format(self.transformed_path)
+        self.test_files = '{}/te.pkl'.format(self.transformed_path)
 
 
+def get_config(env=None):
+    if env == 'cloud':
+        return CMLEConfig()
+    else:
+        return Config()

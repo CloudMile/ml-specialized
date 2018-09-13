@@ -1,4 +1,4 @@
-import os, pandas as pd
+import os, pandas as pd, argparse
 
 from . import app_conf, service, input
 from .utils import utils
@@ -13,12 +13,10 @@ class Ctrl(object):
     logger = utils.logger(__name__)
 
     def __init__(self):
-        self.service:service.Service = service.Service.instance
-        self.p:app_conf.Config = app_conf.instance
-        # self.feature:m.Feature = m.Feature()
-        self.input:input.Input = input.Input.instance
+        self.service = utils.get_instance(service.Service)
+        self.input = utils.get_instance(input.Input)
 
-    def set_client_secret(self):
+    def set_client_secret(self, p):
         """Set environment variable to api key path in order to
           access GCP service
 
@@ -27,8 +25,8 @@ class Ctrl(object):
         from google.auth import environment_vars
 
         CREDENTIAL_NAME = environment_vars.CREDENTIALS
-        os.environ[CREDENTIAL_NAME] = self.p.api_key_path
-        self.logger.info(f"Set env variable [{CREDENTIAL_NAME}]")
+        os.environ[CREDENTIAL_NAME] = p.api_key_path
+        self.logger.info("Set env variable [{}]".format(CREDENTIAL_NAME))
         return self
 
     def prepare(self, p):
@@ -54,13 +52,14 @@ class Ctrl(object):
           - fpath: training file path
         :return: self
         """
-        data = self.input.clean(p.fpath, is_serving=False)
-        self.input.split(data)
+        p = self.merge_params(p)
+        data = self.input.clean(p, p.fpath, is_serving=False)
+        self.input.split(p, data)
         del data
 
-        self.input.prepare(f'{self.p.cleaned_path}/tr.pkl', is_serving=False)
-        self.input.fit(f'{self.p.prepared_path}/tr.pkl')
-        self.input.transform(f'{self.p.prepared_path}/tr.pkl', is_serving=False)
+        self.input.prepare(p, '{}/tr.pkl'.format(p.cleaned_path), is_serving=False)
+        self.input.fit(p, '{}/tr.pkl'.format(p.prepared_path))
+        self.input.transform(p, '{}/tr.pkl'.format(p.prepared_path), is_serving=False)
         return self
 
     def transform(self, p):
@@ -71,9 +70,10 @@ class Ctrl(object):
           - fpath: training file path
         :return: Transformed data
         """
+        p = self.merge_params(p)
         data = self.input.clean(p.fpath, is_serving=True)
-        data = self.input.prepare(data, is_serving=True)
-        data = self.input.transform(data, is_serving=True)
+        data = self.input.prepare(p, data, is_serving=True)
+        data = self.input.transform(p, data, is_serving=True)
         return data
 
     def train(self, p):
@@ -84,7 +84,8 @@ class Ctrl(object):
           - model_name: Specify which model to train
         :return: self
         """
-        self.service.train(reset=p.reset, model_name=p.model_name)
+        p = self.merge_params(p)
+        self.service.train(p)
         return self
 
     def upload_model(self, p):
@@ -98,14 +99,15 @@ class Ctrl(object):
         """
         from google.cloud import storage
 
+        p = self.merge_params(p)
         bucket = storage.Client().get_bucket(p.bucket_name)
         # clean model dir
         for blob in bucket.list_blobs(prefix=p.prefix):
-            self.logger.info(f'delete {p.bucket_name}/{blob.name}')
+            self.logger.info('delete {}/{}'.format(p.bucket_name, blob.name))
             blob.delete()
         # upload
         for local, blob_name in utils.deep_walk(p.model_path, prefix=p.prefix):
-            self.logger.info(f'copy {local} to {blob_name}')
+            self.logger.info('copy {} to {}'.format(local, blob_name))
             bucket.blob(blob_name).upload_from_filename(local)
         return self
 
@@ -120,6 +122,8 @@ class Ctrl(object):
           - model_name: ML-Engine repository name
         :return: self
         """
+
+        p = self.merge_params(p)
         ml = self.service.find_ml()
         self.service.create_model_rsc(ml, p.model_name)
         self.service.clear_model_ver(ml, p.model_name)
@@ -137,7 +141,8 @@ class Ctrl(object):
         """
         from tensorflow.contrib import predictor
 
-        export_dir = self.service.find_latest_expdir(p.model_name)
+        p = self.merge_params(p)
+        export_dir = self.service.find_latest_expdir(p, p.model_name)
         predict_fn = predictor.from_saved_model(export_dir, signature_def_key='outputs')
 
         if p.is_src_file:
@@ -152,7 +157,7 @@ class Ctrl(object):
             predictions.extend(predict_fn(pipe.to_dict('list')).get('predictions').ravel())
             count += len(pipe)
             if count % 10000 == 0:
-                self.logger.info(f"{count}/{n_total} ...")
+                self.logger.info("{}/{} ...".format(count, n_total))
         return predictions
 
     def online_predict(self, p):
@@ -169,14 +174,169 @@ class Ctrl(object):
           - model_name: Model name in `dnn` `neu_mf`
         :return: Predicted result
         """
-        self.logger.info(f"Online prediction ...")
+        self.logger.info("Online prediction ...")
+
+        p = self.merge_params(p)
         datasource = p.datasource
         if not isinstance(datasource, pd.DataFrame):
             datasource = pd.DataFrame(datasource)
 
         datasource = list(self.service.padded_batch(datasource))[0]
         records = datasource.to_dict('records')
-        return self.service.online_predict(records, p.model_name)
+        return self.service.online_predict(p, records, p.model_name)
 
-Ctrl.instance = Ctrl()
+    def merge_params(self, args=None):
+        """Merge received parameters with default settings in app_conf.py
+
+        :param args: Received parameters
+        :return: Merged parameters
+        """
+        if args is not None:
+            if not isinstance(args, dict):
+                args = args.to_dict() if isinstance(args, pd.Series) else args.__dict__
+
+            params = {}
+            params.update(app_conf.get_config(args.get("env")).__dict__)
+            params.update(args)
+            params = pd.Series(params)
+        else:
+            params = pd.Series(app_conf.get_config().__dict__)
+
+        return params
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument(
+        '--env',
+        default="cloud",
+        help='string "cloud" for app_conf.CMLEConfig, else app_conf.Config',
+    )
+    parser.add_argument(
+        '--reset',
+        default=True,
+        type=bool,
+        help='whether to clear job dir',
+    )
+    parser.add_argument(
+        '--model-name',
+        default="neu_mf",
+        help='',
+    )
+    parser.add_argument(
+        '--method',
+        default='train',
+        help='execution method in Controller object',
+    )
+    parser.add_argument(
+        '--job-dir',
+        help='where to put checkpoints',
+    )
+    parser.add_argument(
+        '--train-steps',
+        default=4358,
+        type=int,
+        help='max train steps',
+    )
+    parser.add_argument(
+        '--valid-steps',
+        default=492,
+        type=int,
+        help='max eval steps',
+    )
+    parser.add_argument(
+        '--runtime-version',
+        default='1.10',
+        help='specific the runtime version',
+    )
+    parser.add_argument(
+        '--batch-size',
+        help='Batch size for each training step',
+        type=int,
+        default=1000
+    )
+    parser.add_argument(
+        '--verbosity',
+        choices=[
+            'DEBUG',
+            'ERROR',
+            'FATAL',
+            'INFO',
+            'WARN'
+        ],
+        default='INFO',
+    )
+
+    # hyper parameters
+    parser.add_argument(
+        '--learning-rate',
+        default=0.001,
+        type=float,
+        help='learning rate',
+    )
+    parser.add_argument(
+        '--drop-rate',
+        default=0.3,
+        type=float,
+        help='drop out rate',
+    )
+    parser.add_argument(
+        '--embedding-size',
+        help='number of embedding dimensions for songs, artist_name, composer, lyricist ...',
+        default=16,
+        type=int
+    )
+    parser.add_argument(
+        '--num-layers',
+        help='number of layers in the DNN, here both size of DNN part and MF part are the same',
+        default=3,
+        type=int
+    )
+    parser.add_argument(
+        '--scale-factor',
+        help='how quickly should the size of the layers in the DNN decay',
+        default=0.7,
+        type=float
+    )
+    parser.add_argument(
+        '--first-mlp-layer-size',
+        help='recommendation dnn part first hidden layer size',
+        default=512,
+        type=int
+    )
+    parser.add_argument(
+        '--first-factor-layer-size',
+        help='recommendation mf part first hidden layer size (before features concatenate)',
+        default=32,
+        type=int
+    )
+    parser.add_argument(
+        '--cos-decay-steps',
+        help='cosine decay steps, usually same with train_steps',
+        default=4358,
+        type=int
+    )
+
+
+    parser.add_argument(
+        '--throttle-secs',
+        help='how long to wait before running the next evaluation',
+        default=60,
+        type=int
+    )
+    parser.add_argument(
+        '--save-checkpoints-steps',
+        help='save checkpoint every steps',
+        default=500,
+        type=int
+    )
+
+    args = parser.parse_args()
+    ctrl = utils.get_instance(Ctrl)
+    # from pprint import pprint
+    # pprint(params.to_dict())
+    execution = getattr(ctrl, args.method)
+    execution(args)
+
 

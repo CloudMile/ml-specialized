@@ -13,14 +13,12 @@ class Model(object):
 
         :param model_dir: Model checkpoint directory path
         """
-        self.p = app_conf.instance
         self.model_dir = model_dir
-        # self.feature = Feature.instance
-        self.mapper = utils.read_pickle(f'{self.p.fitted_path}/stats.pkl')
+        self.mapper = None
         self.share_emb = True
         pass
 
-    def base_features(self, features, label, mode):
+    def base_features(self, p, features, label, mode):
         """Handle graph about all kind of variables initialization, weighted sum of all features and relevant
           weights, concat features of members, songs
 
@@ -35,20 +33,26 @@ class Model(object):
             # Embedding init
             with tf.variable_scope("embedding"):
                 self.emb = {}
-                for colname, dim in metadata.EMB_COLS.items():
+
+                emb_cols = metadata.EMB_COLS.copy()
+                # Edit embedding size to receive the hyper parameter setting
+                for key in ('song_id', 'artist_name', 'composer', 'lyricist'):
+                    emb_cols[key] = p.embedding_size
+
+                for colname, dim in emb_cols.items():
                     n_unique = len(self.mapper[colname].classes_)
                     self.emb[colname] = self.get_embedding_var(
-                        [n_unique, dim], uniform_init_fn, f'emb_{colname}')
+                        [n_unique, dim], uniform_init_fn, 'emb_{}'.format(colname))
 
                 if not self.share_emb:
-                    self.logger.info(f'Split embedding of song_query and song_id!')
+                    self.logger.info('Split embedding of song_query and song_id!')
                     # For NeuMFModel, try to use different embedding vocabularies
                     song_query_len = len(self.mapper['song_id'].classes_)
-                    song_query_emb_dim = metadata.EMB_COLS['song_id']
+                    song_query_emb_dim = emb_cols['song_id']
                     self.emb['song_query'] = self.get_embedding_var(
                         [song_query_len, song_query_emb_dim],
                         uniform_init_fn,
-                        f'emb_song_query'
+                        'emb_song_query'
                     )
 
         with tf.variable_scope("members") as scope:
@@ -86,7 +90,7 @@ class Model(object):
                 self.msno_source_type_hist_count
             ]
             self.members_feature = tf.concat(members_concat_feats, 1, name='members_feature')
-            self.logger.info(f'self.members_feature: {self.members_feature}')
+            self.logger.info('self.members_feature: {}'.format(self.members_feature))
 
         with tf.variable_scope("songs") as scope:
             self.song_id = tf.nn.embedding_lookup(self.emb['song_id'], features['song_id'])
@@ -128,7 +132,7 @@ class Model(object):
                 self.song_source_type_hist_count
             ]
             self.songs_feature = tf.concat(songs_concat_feats, 1, name='songs_feature')
-            self.logger.info(f'self.songs_feature: {self.songs_feature}')
+            self.logger.info('self.songs_feature: {}'.format(self.songs_feature))
 
         """'source_system_tab', 'source_screen_name', 'source_type'"""
         with tf.variable_scope("context"):
@@ -137,9 +141,9 @@ class Model(object):
             self.source_type = tf.nn.embedding_lookup(self.emb['source_type'], features['source_type'])
             self.context_features = tf.concat(
                 [self.source_system_tab, self.source_screen_name, self.source_type], 1, name='context_features')
-            self.logger.info(f'self.context_features: {self.context_features}')
+            self.logger.info('self.context_features: {}'.format(self.context_features))
 
-    def factor_encode(self, uniform_init_fn, has_context=True, mode=None, name='factor_mlp'):
+    def factor_encode(self, p, uniform_init_fn, has_context=True, mode=None, name='factor_mlp'):
         """Encode the concatenated features of members, songs, context, with fully connected layer
 
         :param uniform_init_fn: Initialization function
@@ -154,19 +158,19 @@ class Model(object):
             factors = (self.members_feature, self.songs_feature, self.context_features) if has_context else \
                       (self.members_feature, self.songs_feature)
             for factor in factors:
-                for layer in self.p.factor_layers:
+                for layer in self.construct_hidden_units(p, 'factor'):
                     factor = tf.layers.dense(factor, layer, kernel_initializer=uniform_init_fn,
                                     kernel_constraint=tf.keras.constraints.max_norm(),
-                                    # kernel_regularizer=tf.contrib.layers.l2_regularizer(self.p.reg_scale),
+                                    # kernel_regularizer=tf.contrib.layers.l2_regularizer(p.reg_scale),
                                     activation=tf.nn.selu)
                     # factor = tf.nn.relu(tf.layers.batch_normalization(factor))
-                    if is_train and self.p.drop_rate > 0:
-                        factor = alpha_dropout(factor, keep_prob=1 - self.p.drop_rate)
+                    if is_train and p.drop_rate > 0:
+                        factor = alpha_dropout(factor, keep_prob=1 - p.drop_rate)
 
                 ret.append(factor)
         return ret
 
-    def model_fn(self, features, labels, mode):
+    def model_fn(self, features, labels, mode, p):
         """Implement model graph
 
         :param features: A dictionary of tensors keyed by the feature name.
@@ -175,26 +179,27 @@ class Model(object):
         :return: `tf.estimator.EstimatorSpec`
         """
         is_train = mode == tf.estimator.ModeKeys.TRAIN
-        self.logger.info(f'mode: {mode}, is_train: {is_train}, use dropout: {is_train and self.p.drop_rate > 0}')
+        self.logger.info('mode: {}, is_train: {}, '
+                         'use dropout: {}'.format(mode, is_train, is_train and p.drop_rate > 0))
 
-        self.base_features(features, labels, mode)
+        self.base_features(p, features, labels, mode)
 
         uniform_init_fn = tf.glorot_uniform_initializer()
         self.members_feature, self.songs_feature, self.context_features = (
-            self.factor_encode(uniform_init_fn, has_context=True, mode=mode, name='factor_mlp'))
+            self.factor_encode(p, uniform_init_fn, has_context=True, mode=mode, name='factor_mlp'))
 
         with tf.variable_scope("dnn", reuse=tf.AUTO_REUSE):
             net = tf.concat([self.members_feature, self.songs_feature, self.context_features], 1)
-            self.logger.info(f'net: {net}')
-            for layer in self.p.mlp_layers:
+            self.logger.info('net: {}'.format(net))
+            for layer in self.construct_hidden_units(p, 'dnn'):
                 net = tf.layers.dense(net, layer, kernel_initializer=uniform_init_fn,
                                       kernel_constraint=tf.keras.constraints.max_norm(),
-                                      # kernel_regularizer=tf.contrib.layers.l2_regularizer(self.p.reg_scale),
+                                      # kernel_regularizer=tf.contrib.layers.l2_regularizer(p.reg_scale),
                                       activation=tf.nn.selu)
                 # net = tf.nn.relu(tf.layers.batch_normalization(net))
-                if is_train and self.p.drop_rate > 0:
-                    net = alpha_dropout(net, 1 - self.p.drop_rate)
-                    # net = tf.layers.dropout(net, rate=self.p.drop_rate, training=is_train)
+                if is_train and p.drop_rate > 0:
+                    net = alpha_dropout(net, 1 - p.drop_rate)
+                    # net = tf.layers.dropout(net, rate=p.drop_rate, training=is_train)
 
             self.logits = tf.layers.dense(net, 1, kernel_initializer=uniform_init_fn, activation=None)
             self.pred = tf.nn.sigmoid(self.logits, name='pred')
@@ -228,14 +233,14 @@ class Model(object):
                 # update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
                 # with tf.control_dependencies(update_ops):
 
-                learning_rate = tf.train.cosine_decay(self.p.initial_learning_rate,
+                learning_rate = tf.train.cosine_decay(p.learning_rate,
                                                       self.global_step,
-                                                      self.p.cos_decay_steps,
+                                                      p.cos_decay_steps,
                                                       alpha=0.1)
                 tf.summary.scalar("learning_rate", learning_rate)
 
                 self.train_op = tf.train.AdamOptimizer(learning_rate).minimize(self.loss, global_step=self.global_step)
-                # self.train_op = tf.train.MomentumOptimizer(learning_rate, self.p.momentum)\
+                # self.train_op = tf.train.MomentumOptimizer(learning_rate, p.momentum)\
                 #                         .minimize(self.loss, self.global_step)
 
         return tf.estimator.EstimatorSpec(
@@ -256,16 +261,14 @@ class Model(object):
         :return: None
         """
         setattr(self, base_key, tf.nn.embedding_lookup(self.emb[dict_key], features[base_key]))
-        # print(f'self.{base_key}: {getattr(self, base_key)}')
+
         for w_key in weighted_key:
             setattr(self, w_key, tf.nn.l2_normalize(features[w_key], 1)[:, :, tf.newaxis])
-            # print(f'self.{w_key}: {getattr(self, w_key)}')
+
             tail = w_key.replace(base_key.replace('_hist', ''), '')
-            name = f'{base_key}{tail}'
+            name = '{}{}'.format(base_key, tail)
             val = tf.reduce_sum(getattr(self, base_key) * getattr(self, w_key), 1, name=name)
             setattr(self, name, val)
-        #     print(f'self.{name}: {getattr(self, name)}')
-        # print()
 
     def song_weighted_sum(self, features, dict_key, base_key, weighted_key: list, is_seq=False):
         """Do weighted sum to multivalent column of songs table, just like tf.nn.embedding_lookup_sparse
@@ -310,28 +313,48 @@ class Model(object):
             return tf.Variable(init_fn(shape=[shape[0] + 1, shape[1]]), name=name)
 
 
-    def get_estimator(self, config:tf.estimator.RunConfig):
+    def get_estimator(self, p, config:tf.estimator.RunConfig):
         """Customized tf.estimator.Estimator object
 
         :param config: see `tf.estimator.RunConfig`
         :return: `tf.estimator.Estimator`
         """
         self.logger.info('creating a custom Estimator')
-        est = tf.estimator.Estimator(model_fn=self.model_fn, model_dir=self.model_dir, config=config)
+        est = tf.estimator.Estimator(model_fn=self.model_fn, model_dir=self.model_dir,
+                                     config=config, params=p)
 
         # Create directory for export, it will raise error if in GCS environment
         try:
-            os.makedirs(f'{self.p.model_dir}/export/{self.p.export_name}', exist_ok=True)
+            tf.gfile.MakeDirs('{}/export/{}'.format(p.model_dir, p.export_name), exist_ok=True)
         except Exception as e:
             self.logger.warn(e)
         return est
+
+    def construct_hidden_units(self, p, part='dnn'):
+        """Create the number of hidden units in each layer
+
+        it will use a "decay" mechanism to define the number of units in each layer.
+
+        :param p: Received parameters
+        :param part: 'dnn' or 'factor', 'dnn' for mlp (DNN) part, 'factor' for matrix factorization part
+        :return:
+        """
+
+        first_layer_size = p.first_mlp_layer_size if part == 'dnn' else p.first_factor_layer_size
+        hidden_units = [
+            max(2, int(first_layer_size * p.scale_factor ** i))
+            for i in range(p.num_layers)
+        ]
+
+        self.logger.info("Hidden units structure: {}".format(hidden_units))
+        return hidden_units
 
 class NeuMFModel(Model):
     """Inherit Model(DNN), implement this paper [NCF](https://arxiv.org/pdf/1708.05031.pdf)"""
     def __init__(self, *args, **kwargs):
         super(NeuMFModel, self).__init__(*args, **kwargs)
 
-    def model_fn(self, features, labels, mode):
+    def model_fn(self, features, labels, mode, p):
         """Implement model graph
 
         :param features: A dictionary of tensors keyed by the feature name.
@@ -340,39 +363,40 @@ class NeuMFModel(Model):
         :return: `tf.estimator.EstimatorSpec`
         """
         is_train = mode == tf.estimator.ModeKeys.TRAIN
-        self.logger.info(f'mode: {mode}, is_train: {is_train}, use dropout: {is_train and self.p.drop_rate > 0}')
+        self.logger.info('mode: {}, is_train: {}, '
+                         'use dropout: {}'.format(mode, is_train, is_train and p.drop_rate > 0))
 
         self.base_features(features, labels, mode)
 
         uniform_init_fn = tf.glorot_uniform_initializer()
         mlp_members, mlp_songs, mlp_conext = (
-            self.factor_encode(uniform_init_fn, has_context=True, mode=mode, name='factor_mlp'))
+            self.factor_encode(p, uniform_init_fn, has_context=True, mode=mode, name='factor_mlp'))
 
         with tf.variable_scope("mlp", reuse=tf.AUTO_REUSE):
             self.mlp_vector = tf.concat([mlp_members, mlp_songs, mlp_conext], 1)
-            for layer in self.p.mlp_layers:
+            for layer in self.construct_hidden_units(p, 'dnn'):
                 self.mlp_vector = tf.layers.dense(self.mlp_vector, layer,
                                       kernel_initializer=uniform_init_fn,
                                       kernel_constraint=tf.keras.constraints.max_norm(),
-                                      # kernel_regularizer=tf.contrib.layers.l2_regularizer(self.p.reg_scale),
+                                      # kernel_regularizer=tf.contrib.layers.l2_regularizer(p.reg_scale),
                                       activation=tf.nn.selu)
                 # self.mlp_vector = tf.nn.relu(tf.layers.batch_normalization(self.mlp_vector))
-                if is_train and self.p.drop_rate > 0:
-                    # self.mlp_vector = tf.layers.dropout(self.mlp_vector, self.p.drop_rate, training=is_train)
-                    self.mlp_vector = alpha_dropout(self.mlp_vector, keep_prob=1 - self.p.drop_rate)
+                if is_train and p.drop_rate > 0:
+                    # self.mlp_vector = tf.layers.dropout(self.mlp_vector, p.drop_rate, training=is_train)
+                    self.mlp_vector = alpha_dropout(self.mlp_vector, keep_prob=1 - p.drop_rate)
 
         mf_members, mf_songs = self.factor_encode(uniform_init_fn, has_context=False, mode=mode, name='factor_mf')
         with tf.variable_scope("mf", reuse=tf.AUTO_REUSE):
             self.mf_vector = tf.multiply(mf_members, mf_songs)
             # self.mf_vector = tf.nn.relu(tf.layers.batch_normalization(self.mf_vector))
-            if is_train and self.p.drop_rate > 0:
-                self.mf_vector = tf.layers.dropout(self.mf_vector, rate=self.p.drop_rate, training=is_train)
+            if is_train and p.drop_rate > 0:
+                self.mf_vector = tf.layers.dropout(self.mf_vector, rate=p.drop_rate, training=is_train)
 
         with tf.variable_scope("concatenate", reuse=tf.AUTO_REUSE):
             self.net = tf.concat([self.mf_vector, self.mlp_vector], 1)
             self.logits = tf.layers.dense(self.net, 1, kernel_initializer=uniform_init_fn,
                             kernel_constraint=tf.keras.constraints.max_norm(),
-                            # kernel_regularizer=tf.contrib.layers.l2_regularizer(self.p.reg_scale),
+                            # kernel_regularizer=tf.contrib.layers.l2_regularizer(p.reg_scale),
                             activation=None)
             self.pred = tf.nn.sigmoid(self.logits)
 
@@ -391,7 +415,7 @@ class NeuMFModel(Model):
             self.labels = tf.to_float(labels[:, tf.newaxis])
             self.loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.labels, logits=self.logits))
             for reg_term in tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES):
-                self.logger.info(f'reg_term: {reg_term.name}')
+                self.logger.info('reg_term: {}'.format(reg_term.name))
                 self.loss += reg_term
             tf.summary.scalar('loss', self.loss)
 
@@ -406,9 +430,9 @@ class NeuMFModel(Model):
                 # update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
                 # with tf.control_dependencies(update_ops):
 
-                learning_rate = tf.train.cosine_decay(self.p.initial_learning_rate,
+                learning_rate = tf.train.cosine_decay(p.initial_learning_rate,
                                                       self.global_step,
-                                                      self.p.cos_decay_steps,
+                                                      p.cos_decay_steps,
                                                       alpha=0.1)
                 tf.summary.scalar("learning_rate", learning_rate)
                 self.train_op = tf.train.AdamOptimizer(learning_rate).minimize(self.loss, global_step=self.global_step)
@@ -441,7 +465,7 @@ class BestScoreExporter(tf.estimator.Exporter):
         self.best = self.get_last_eval()
         self._exports_to_keep = 1
         self.export_result = None
-        self.logger.info(f'BestScoreExporter init, last best eval is {self.best}')
+        self.logger.info('BestScoreExporter init, last best eval is {}'.format(self.best))
 
     @property
     def name(self):
@@ -449,16 +473,16 @@ class BestScoreExporter(tf.estimator.Exporter):
 
     def get_last_eval(self):
         """Get the latest best score."""
-        path = f'{self.model_dir}/best.eval'
-        if flex.io(path).exists():
+        path = '{}/best.eval'.format(self.model_dir)
+        if tf.gfile.Exists(path):
             return utils.read_pickle(path)
         else:
             return None
 
     def save_last_eval(self, best:float):
         """Save the latest best score."""
-        self.logger.info(f'Persistent best eval: {best}')
-        path = f'{self.model_dir}/best.eval'
+        self.logger.info('Persistent best eval: {}'.format(best))
+        path = '{}/best.eval'.format(self.model_dir)
         utils.write_pickle(path, best)
 
     def export(self, estimator, export_path, checkpoint_path, eval_result,
@@ -474,22 +498,22 @@ class BestScoreExporter(tf.estimator.Exporter):
             the training.
         :return:
         """
-        self.logger.info(f'eval_result: {eval_result}')
+        self.logger.info('eval_result: {}'.format(eval_result))
         curloss = eval_result['loss']
         if self.best is None or self.best >= curloss:
             # Clean first, only keep the best weights
-            self.logger.info(f'clean export_path: {export_path}')
+            self.logger.info('clean export_path: {}'.format(export_path))
             try:
-                shutil.rmtree(export_path)
+                tf.gfile.DeleteRecursively(export_path)
             except Exception as e:
                 self.logger.warn(e)
 
-            os.makedirs(export_path, exist_ok=True)
+            tf.gfile.MakeDirs(export_path)
 
             self.best = curloss
             self.save_last_eval(self.best)
 
-            self.logger.info(f'nice eval loss: {curloss}, export to pb')
+            self.logger.info('nice eval loss: {}, export to pb'.format(curloss))
             self.export_result = estimator.export_savedmodel(
                 export_path,
                 self.serving_input_receiver_fn,
@@ -497,6 +521,6 @@ class BestScoreExporter(tf.estimator.Exporter):
                 as_text=self.as_text,
                 checkpoint_path=checkpoint_path)
         else:
-            self.logger.info(f'bad eval loss: {curloss}')
+            self.logger.info('bad eval loss: {}'.format(curloss))
 
         return self.export_result

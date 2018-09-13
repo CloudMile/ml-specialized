@@ -76,6 +76,10 @@ class Service(object):
         :param p: Received parameters
         :return: self
         """
+        if isinstance(p, pd.Series):
+            for k, v in p.items():
+                self.logger.info('{}: {}'.format(k, v))
+
         self.check_model_name(p.model_name)
 
         if p.model_name == 'ridge': return self.train_ridge(p)
@@ -98,7 +102,7 @@ class Service(object):
             session_config=sess_config,
             # tf_random_seed=878787,
             log_step_count_steps=p.log_step_count_steps,
-            # save_checkpoints_steps=p.save_checkpoints_steps,
+            save_checkpoints_steps=p.save_checkpoints_steps,
             # save_checkpoints_secs=HYPER_PARAMS.eval_every_secs,
             keep_checkpoint_max=p.keep_checkpoint_max,
             model_dir=model_dir
@@ -144,7 +148,7 @@ class Service(object):
             steps=p.valid_steps,
             exporters=[exporter],
             name='estimator-eval',
-            # throttle_secs=p.eval_every_secs,
+            throttle_secs=p.throttle_secs,
             # hooks=[]
         )
         # train and evaluate

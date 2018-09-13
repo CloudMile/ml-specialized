@@ -408,7 +408,7 @@ class Input(object):
                           file_encoding='csv',
                           mode=tf.estimator.ModeKeys.EVAL,
                           skip_header_lines=1,
-                          num_epochs=1,
+                          num_epochs=None,
                           batch_size=200,
                           shuffle=False,
                           multi_threading=True,

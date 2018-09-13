@@ -1,4 +1,4 @@
-import yaml, codecs, logging, os, pandas as pd, numpy as np, re, pickle
+import yaml, codecs, logging, os, pandas as pd, numpy as np, re, pickle, tensorflow as tf
 
 from logging import config
 from datetime import datetime
@@ -28,6 +28,12 @@ class Logging(object):
 def logger(name):
     """Short path of Logging.logger"""
     return Logging.get_logger(name)
+
+def get_instance(cls, *args, **kwargs):
+    """Simulate the singleton pattern"""
+    if cls.instance is None:
+        cls.instance = cls(*args, **kwargs)
+    return cls.instance
 
 def cmd(commands):
     """Execute command in python code"""
@@ -67,11 +73,11 @@ def preview(fpath, heads=5):
         return chunk
 
 def read_pickle(path):
-    with open(path, 'rb') as fp:
+    with tf.gfile.FastGFile(path, 'rb') as fp:
         return pickle.load(fp)
 
 def write_pickle(path, obj):
-    with open(path, 'wb') as fp:
+    with tf.gfile.FastGFile(path, 'wb') as fp:
         pickle.dump(obj, fp)
 
 from sklearn.base import BaseEstimator, TransformerMixin

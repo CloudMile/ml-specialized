@@ -35,26 +35,28 @@ class Config(object):
 
         # Data prepare relevant parameter
         self.valid_size = 0.3
-        # self.job_dir = '{self.model_path}/dnn_regressor'
-        # self.dnn_model_dir = '{self.model_path}/dnn_regressor_128_64_32'
-        # self.wnd_model_dir = '{self.model_path}/wide_and_deep'
         # Dir name in {model_dir}/export
         self.export_name = 'estimator'
 
         # Hyper parameter
-        self.mlp_layers = [128, 64, 32]
-        # mlp_layers = [1024, 512, 256]
-        self.learning_rate = 0.005
+        self.embedding_size = 16
+        self.first_layer_size = 128
+        self.num_layers = 3
+        self.scale_factor = 0.7
+        self.learning_rate = 0.001
         self.drop_rate = 0.3
-        self.keep_checkpoint_max = 3
+
+        # Training config
+        self.job_dir = '{}/dnn_regressor'.format(self.model_path)
+        self.keep_checkpoint_max = 5
         self.log_step_count_steps = 500
         self.train_steps = 2308 * 8
         self.valid_steps = 989
         self.batch_size = 256
-        self.num_epochs = 1
-        # eval_every_secs = 600
-        # encode_one_hot = False
-        # as_wide_columns = False
+        self.num_epochs = None
+        self.verbosity = 'INFO'
+        self.throttle_secs = 60
+        self.save_checkpoints_steps = 2308
 
         # Serving relevant
         self.serving_format = 'json'

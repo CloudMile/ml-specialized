@@ -1,5 +1,5 @@
 import numpy as np, pandas as pd, tensorflow as tf
-import  multiprocessing, html, shutil, re
+import  multiprocessing, html, re
 
 from collections import OrderedDict
 from sklearn.utils import shuffle as sk_shuffle
@@ -33,21 +33,19 @@ class Input(object):
     logger = utils.logger(__name__)
 
     def __init__(self):
-        self.p = app_conf.instance
-        # self.feature = m.Feature.instance
         self.serving_fn = {
             'json': getattr(self, 'json_serving_input_fn')
             # 'csv': getattr(self, 'csv_serving_fn')
         }
 
-    def clean(self, data, is_serving=False):
+    def clean(self, p, data, is_serving=False):
         """Missing value imputing, maybe some data transformation to string features.
 
         :param data: Input data, maybe DataFrame or simple file path string
         :param is_serving: True: train or eval period, False: serving period
         :return: Cleaned data
         """
-        self.logger.info(f'Clean start, is_serving: {is_serving}')
+        self.logger.info('Clean start, is_serving: {}'.format(is_serving))
         s = datetime.now()
         if isinstance(data, str):
             data = pd.read_csv(data)
@@ -60,12 +58,12 @@ class Input(object):
         if is_serving:
             ret = data
         else:
-            members = pd.read_csv('./data/members.csv')
-            songs = pd.read_csv('./data/songs.csv') \
-                      .merge(pd.read_csv('./data/song_extra_info.csv'), how='left', on='song_id') \
+            members = pd.read_csv(p.raw_members)
+            songs = pd.read_csv(p.raw_songs) \
+                      .merge(pd.read_csv(p.raw_song_extra_info), how='left', on='song_id') \
                       .drop('name', 1)
 
-            self.logger.info(f'Clean table members.')
+            self.logger.info('Clean table members.')
             # Clean member table
             members['gender'] = members.gender.fillna('')
             date_fmt = '%Y%m%d'
@@ -76,7 +74,7 @@ class Input(object):
             members['registered_via'] = members.registered_via.astype(str)
             members['city'] = members.city.astype(str)
 
-            self.logger.info(f'Clean table songs.')
+            self.logger.info('Clean table songs.')
             # Clean songs table
             def str2tuple(series):
                 return series.fillna('') \
@@ -91,14 +89,14 @@ class Input(object):
             songs['lyricist'] = str2tuple(songs['lyricist'])
             # songs['language'] = songs.language.fillna(0).map(int, na_action='ignore').map(str)
             songs['language'] = songs.language.map(lambda e: str(int(float(e))), na_action='ignore').fillna('')
-            members.to_pickle(f'{self.p.cleaned_path}/members.pkl')
-            songs.to_pickle(f'{self.p.cleaned_path}/songs.pkl')
+            members.to_pickle('{}/members.pkl'.format(p.cleaned_path))
+            songs.to_pickle('{}/songs.pkl'.format(p.cleaned_path))
             ret = data
 
-        self.logger.info(f'Clean take time {datetime.now() - s}')
+        self.logger.info('Clean take time {}'.format(datetime.now() - s))
         return ret
 
-    def split(self, data):
+    def split(self, p, data):
         """Only necessary in training period, here we split by  history logs of each user,
           take latest 10 percent to valid data.
 
@@ -124,21 +122,21 @@ class Input(object):
                 pipe = pipe[-per75:]
                 len_ = len(pipe)
                 is_train = np.zeros(len_)
-                tr_size = int(len_ * (1 - self.p.valid_size))
+                tr_size = int(len_ * (1 - p.valid_size))
                 is_train[:tr_size] = 1.
                 pipe['is_train'] = is_train
                 return pipe
 
-        self.logger.info(f'Msno data distribution \n{msno_describe}\n')
-        self.logger.info(f'Filter training data')
+        self.logger.info('Msno data distribution \n{}\n'.format(msno_describe))
+        self.logger.info('Filter training data')
         data = data.groupby('msno', as_index=False, sort=False).apply(filter_fn)
         vl = data.query('is_train == 0').drop('is_train', 1).reset_index(drop=True)
         tr = data.query('is_train == 1').drop('is_train', 1).reset_index(drop=True)
 
-        tr.to_pickle(f'{self.p.cleaned_path}/tr.pkl')
-        vl.to_pickle(f'{self.p.cleaned_path}/vl.pkl')
+        tr.to_pickle('{}/tr.pkl'.format(p.cleaned_path))
+        vl.to_pickle('{}/vl.pkl'.format(p.cleaned_path))
 
-        self.logger.info(f'Split take time {datetime.now() - s}')
+        self.logger.info('Split take time {}'.format(datetime.now() - s))
         return tr, vl
 
     def flatten(self, data, uni_cols:list, m_col, target):
@@ -185,8 +183,8 @@ class Input(object):
         :return: Dictionary object, structure {key1: [...], key2: [...], ...}
         """
         s = datetime.now()
-        label_name = f'msno_{col}_hist'
-        calc_names = [f'msno_{col}_{calc}' for calc in to_calc]
+        label_name = 'msno_{}_hist'.format(col)
+        calc_names = ['msno_{}_{}'.format(col, calc) for calc in to_calc]
         if is_multi:
             data = self.flatten(data, ['msno'], col, 'target')
 
@@ -194,7 +192,7 @@ class Input(object):
 
         def map_fn(pipe):
             ret = {label_name: tuple(pipe[col])}
-            ret.update({f'msno_{col}_{calc}': tuple(pipe[calc]) for calc in to_calc})
+            ret.update({'msno_{}_{}'.format(col, calc): tuple(pipe[calc]) for calc in to_calc})
             return ret
 
         series = series.groupby('msno').apply(map_fn).reindex(base_msno)
@@ -203,7 +201,7 @@ class Input(object):
         na_value.update({c: (0.,) for c in calc_names})
         series[na_conds] = [na_value] * len(na_conds)
 
-        self.logger.info(f'{col} {",".join(to_calc)} done, take {datetime.now() - s}')
+        self.logger.info('{} {} done, take {}'.format(col, ",".join(to_calc), datetime.now() - s))
         return self.extract_col(series)
 
     def song_statis(self, data, col, to_calc, base_song, is_multi=False):
@@ -221,8 +219,8 @@ class Input(object):
         :return: Dictionary object, structure {key1: [...], key2: [...], ...}
         """
         s = datetime.now()
-        label_name = f'song_{col}_hist'
-        calc_names = [f'song_{col}_{calc}' for calc in to_calc]
+        label_name = 'song_{}_hist'.format(col)
+        calc_names = ['song_{}_{}'.format(col, calc) for calc in to_calc]
         if is_multi:
             data = self.flatten(data, ['song_id'], col, 'target')
 
@@ -230,7 +228,7 @@ class Input(object):
 
         def map_fn(pipe):
             ret = {label_name: tuple(pipe[col])}
-            ret.update({f'song_{col}_{calc}': tuple(pipe[calc]) for calc in to_calc})
+            ret.update({'song_{}_{}'.format(col, calc): tuple(pipe[calc]) for calc in to_calc})
             return ret
 
         series = series.groupby('song_id').apply(map_fn).reindex(base_song)
@@ -241,7 +239,7 @@ class Input(object):
         series[na_conds] = [na_value] * len(na_conds)
         ret = self.extract_col(series)
 
-        self.logger.info(f'{col} {",".join(to_calc)} done, take {datetime.now() - s}')
+        self.logger.info('{} {} done, take {}'.format(col, ",".join(to_calc), datetime.now() - s))
         return ret
 
     def extract_col(self, series):
@@ -254,7 +252,7 @@ class Input(object):
         series.map(lambda dict_: [ret[k].append(v) for k, v in dict_.items()])
         return ret
 
-    def prepare(self, data, is_serving=False):
+    def prepare(self, p, data, is_serving=False):
         """Add features if needed and drop useless features.
 
         :param data: Cleaned data with DataFrame type
@@ -268,26 +266,24 @@ class Input(object):
 
         ret = None
         if is_serving:
-            # members = pd.read_pickle(f'{self.p.prepared_path}/members.pkl')
-            # songs = pd.read_pickle(f'{self.p.prepared_path}/songs.pkl')
             ret = data
         else:
-            members = pd.read_pickle(f'{self.p.cleaned_path}/members.pkl')
-            songs = pd.read_pickle(f'{self.p.cleaned_path}/songs.pkl')
+            members = pd.read_pickle('{}/members.pkl'.format(p.cleaned_path))
+            songs = pd.read_pickle('{}/songs.pkl'.format(p.cleaned_path))
 
-            self.logger.info(f'\nDo prepare_members')
+            self.logger.info('\nDo prepare_members')
             members = self.prepare_members(data, members, songs)
 
-            self.logger.info(f'\nDo prepare_songs')
+            self.logger.info('\nDo prepare_songs')
             songs = self.prepare_songs(data, members, songs)
 
-            members.to_pickle(f'{self.p.prepared_path}/members.pkl')
-            songs.to_pickle(f'{self.p.prepared_path}/songs.pkl')
+            members.to_pickle('{}/members.pkl'.format(p.prepared_path))
+            songs.to_pickle('{}/songs.pkl'.format(p.prepared_path))
             # We don't do anything about train, valid files, just copy them form cleaned dir to prepared dir
-            shutil.copy2(f'{self.p.cleaned_path}/tr.pkl', f'{self.p.prepared_path}')
-            shutil.copy2(f'{self.p.cleaned_path}/vl.pkl', f'{self.p.prepared_path}')
+            tf.gfile.Copy('{}/tr.pkl'.format(p.cleaned_path), '{}/tr.pkl'.format(p.prepared_path), overwrite=True)
+            tf.gfile.Copy('{}/vl.pkl'.format(p.cleaned_path), '{}/vl.pkl'.format(p.prepared_path), overwrite=True)
             ret = self
-        self.logger.info(f'Prepare take time {datetime.now() - s}')
+        self.logger.info('Prepare take time {}'.format(datetime.now() - s))
         return ret
 
 
@@ -324,9 +320,9 @@ class Input(object):
         self.logger.info('processing msno_pos_query, msno_neg_query ...')
         # Positive query and negative query
         for key in ('pos', 'neg'):
-            name = f'{key}_query'
-            lable_name, w_name = f'msno_{name}_hist', f'msno_{name}_count'
-            query = data.query(f"target == {1 if key == 'pos' else 0}") \
+            name = '{}_query'.format(key)
+            lable_name, w_name = 'msno_{}_hist'.format(name), 'msno_{}_count'.format(name)
+            query = data.query("target == {}".format(1 if key == 'pos' else 0)) \
                         .groupby('msno') \
                         .apply(lambda e: {lable_name: tuple(e.song_id), w_name: (1.,) * len(e)}) \
                         .reindex(base_msno)
@@ -391,7 +387,7 @@ class Input(object):
         songs['song_genre_ids_len'] = songs.genre_ids.map(len)
         songs.drop('isrc', 1, inplace=True)
 
-        self.logger.info(f'processing song_clicks, song_pplrty ...')
+        self.logger.info('processing song_clicks, song_pplrty ...')
         base_song = data.song_id.unique()
         basic_stats = data.groupby('song_id').target.agg(['count', 'mean'])
         basic_stats['song_clicks'] = basic_stats['count']
@@ -427,7 +423,7 @@ class Input(object):
                 songs[stats_feat] = songs[stats_feat].fillna(songs[stats_feat].median())
         return songs
 
-    def fit(self, data):
+    def fit(self, p, data):
         """Remember the statistical information about numeric data, label mapping about categorical data,
           and all other information to persistent for serving needed.
 
@@ -440,26 +436,26 @@ class Input(object):
         if isinstance(data, str):
             data = pd.read_pickle(data)
 
-        members = pd.read_pickle(f'{self.p.prepared_path}/members.pkl')
-        songs = pd.read_pickle(f'{self.p.prepared_path}/songs.pkl')
+        members = pd.read_pickle('{}/members.pkl'.format(p.prepared_path))
+        songs = pd.read_pickle('{}/songs.pkl'.format(p.prepared_path))
         data = data.merge(members, on='msno', how='left').merge(songs, on='song_id', how='left')
 
         mapper_dict = {}
         # Categorical univariate features
         for uni_catg in ('msno', 'song_id', 'source_system_tab', 'source_screen_name', 'source_type', 'city',
                          'gender', 'registered_via', 'msno_age_catg', 'language', 'song_cc', 'song_xxx'):
-            self.logger.info(f'fit {uni_catg} ...')
+            self.logger.info('fit {} ...'.format(uni_catg))
             mapper_dict[uni_catg] = utils.CountMapper(outlier='').fit(data[uni_catg])
 
         # Categorical multivalent features
         for multi_catg in ('genre_ids', 'artist_name', 'composer', 'lyricist'):
-            self.logger.info(f'fit {multi_catg} ...')
+            self.logger.info('fit {} ...'.format(multi_catg))
             mapper_dict[multi_catg] = utils.CountMapper(is_multi=True, sep=sep_fn, outlier='').fit(
                 data[multi_catg])
 
         # Numeric features
         for numeric in metadata.NUMERIC_COLS:
-            self.logger.info(f'fit {numeric} ...')
+            self.logger.info('fit {} ...'.format(numeric))
             if numeric in ('registration_init_time', 'expiration_date', 'msno_age_num', 'msno_tenure'):
                 mapper_dict[numeric] = utils.NumericMapper(scaler=preprocessing.StandardScaler()).fit(members[numeric])
             elif numeric in ('song_yy', 'song_length'):
@@ -468,12 +464,12 @@ class Input(object):
                 mapper_dict[numeric] = utils.NumericMapper(scaler=preprocessing.StandardScaler()).fit(data[numeric])
 
         # Persistent the statistic
-        utils.write_pickle(f'{self.p.fitted_path}/stats.pkl', mapper_dict)
+        utils.write_pickle('{}/stats.pkl'.format(p.fitted_path), mapper_dict)
 
-        self.logger.info(f'Fit take time {datetime.now() - s}')
+        self.logger.info('Fit take time {}'.format(datetime.now() - s))
         return self
 
-    def transform(self, data, is_serving=False):
+    def transform(self, p, data, is_serving=False):
         """Transform all features to numeric, like normalize numeric features,
           embedding or one hot encoding categorical features.
 
@@ -488,15 +484,15 @@ class Input(object):
             data = pd.read_pickle(data)
 
         ret = None
-        mapper_dict = utils.read_pickle(f'{self.p.fitted_path}/stats.pkl')
+        mapper_dict = utils.read_pickle('{}/stats.pkl'.format(p.fitted_path))
         # Serving
         if is_serving:
-            members = pd.read_pickle(f'{self.p.transformed_path}/members.pkl')
-            songs = pd.read_pickle(f'{self.p.transformed_path}/songs.pkl')
+            members = pd.read_pickle('{}/members.pkl'.format(p.transformed_path))
+            songs = pd.read_pickle('{}/songs.pkl'.format(p.transformed_path))
             data.insert(0, 'raw_msno', data.pop('msno'))
             data.insert(1, 'raw_song_id', data.song_id)
             for feat in ('song_id', 'source_system_tab', 'source_screen_name', 'source_type'):
-                self.logger.info(f'transform {feat}, vocab_key: {feat} ...')
+                self.logger.info('transform {}, vocab_key: {} ...'.format(feat, feat))
                 data[feat] = self._transform_feature(data[feat], mapper_dict[feat])
 
             self.logger.info('Merge input data ...')
@@ -505,9 +501,9 @@ class Input(object):
         # Train, eval period
         else:
             tr = data
-            vl = pd.read_pickle(f'{self.p.prepared_path}/vl.pkl')
-            members = pd.read_pickle(f'{self.p.prepared_path}/members.pkl')
-            songs = pd.read_pickle(f'{self.p.prepared_path}/songs.pkl')
+            vl = pd.read_pickle('{}/vl.pkl'.format(p.prepared_path))
+            members = pd.read_pickle('{}/members.pkl'.format(p.prepared_path))
+            songs = pd.read_pickle('{}/songs.pkl'.format(p.prepared_path))
 
             members.insert(0, 'raw_msno', members.pop('msno'))
             for feat in metadata.MEMBER_FEATURES:
@@ -515,7 +511,7 @@ class Input(object):
                 if feat in ('city', 'gender', 'registered_via', 'registration_init_time', 'expiration_date',
                             'msno_age_catg', 'msno_age_num', 'msno_tenure'):
                     vocab_key = feat
-                    self.logger.info(f'transform {feat}, vocab_key: {vocab_key} ...')
+                    self.logger.info('transform {}, vocab_key: {} ...'.format(feat, vocab_key))
                     members[feat] = self._transform_feature(members[feat], mapper_dict[vocab_key])
                 # Multivalent features
                 elif feat in ('msno_artist_name_hist', 'msno_composer_hist', 'msno_genre_ids_hist', 'msno_language_hist',
@@ -526,7 +522,7 @@ class Input(object):
                         vocab_key = 'song_id'
                     else:
                         vocab_key = re.sub('^(msno|song)_|_hist$', '', feat)
-                    self.logger.info(f'transform {feat}, vocab_key: {vocab_key} ...')
+                    self.logger.info('transform {}, vocab_key: {} ...'.format(feat, vocab_key))
                     # x = pd.Series( utils.transform(members[feat], mapper_dict[vocab_key], is_multi=True, sep=utils.sep_fn) )
                     # max_len = x.map(len).max()
                     # members[feat] = x.map(lambda tp: tp + (0,) * (max_len - len(tp)))
@@ -538,7 +534,7 @@ class Input(object):
                 # Padding weights Features, xxx_count, xxx_mean... etc.
                 else:
                     pass
-                    # print(f'transform {feat} (weighted columns) ...')
+                    # print('transform {feat} (weighted columns) ...')
                     # max_len = int(members[feat].map(len).max())
                     # members[feat] = members[feat].map(lambda tp: tp + (0.,) * (max_len - len(tp)))
 
@@ -550,7 +546,7 @@ class Input(object):
                 if feat in (
                 'song_id', 'language', 'song_cc', 'song_xxx', 'song_yy', 'song_length', 'song_pplrty', 'song_clicks'):
                     vocab_key = feat
-                    self.logger.info(f'transform {feat}, vocab_key: {vocab_key} ...')
+                    self.logger.info('transform {}, vocab_key: {} ...'.format(feat, vocab_key))
                     songs[feat] = self._transform_feature(songs[feat], mapper_dict[vocab_key])
                 # Multivalent features
                 elif feat in ('genre_ids', 'artist_name', 'composer', 'lyricist',
@@ -558,7 +554,7 @@ class Input(object):
                               'song_source_screen_name_hist',
                               'song_source_system_tab_hist', 'song_source_type_hist'):
                     vocab_key = re.sub('^(msno|song)_|_hist$', '', feat)
-                    self.logger.info(f'transform {feat}, vocab_key: {vocab_key} ...')
+                    self.logger.info('transform {}, vocab_key: {} ...'.format(feat, vocab_key))
                     # x = pd.Series( utils.transform(songs[feat], mapper_dict[vocab_key], is_multi=True, sep=utils.sep_fn) )
                     # max_len = x.map(len).max()
                     # songs[feat] = x.map(lambda tp: tp + (0,) * (max_len - len(tp)) )
@@ -570,7 +566,7 @@ class Input(object):
                 #     songs[feat] = songs[feat].map(lambda tp: ','.join(map('{:.4f}'.format, tp)) )
                 else:
                     pass
-                    # print(f'transform {feat} (weighted columns) ...')
+                    # print('transform {feat} (weighted columns) ...')
                     # max_len = int(members[feat].map(len).max())
                     # songs[feat] = songs[feat].map(lambda tp: tp + (0.,) * (max_len - len(tp)))
 
@@ -580,12 +576,12 @@ class Input(object):
             vl.insert(0, 'raw_msno', vl.pop('msno'))
             vl.insert(1, 'raw_song_id', vl.song_id)
             for feat in ('song_id', 'source_system_tab', 'source_screen_name', 'source_type'):
-                self.logger.info(f'transform {feat}, vocab_key: {feat} ...')
+                self.logger.info('transform {}, vocab_key: {} ...'.format(feat, feat))
                 tr[feat] = self._transform_feature(tr[feat], mapper_dict[feat])
                 vl[feat] = self._transform_feature(vl[feat], mapper_dict[feat])
 
-            members[['raw_msno'] + metadata.MEMBER_FEATURES].to_pickle(f'{self.p.transformed_path}/members.pkl')
-            songs[['raw_song_id'] + metadata.SONG_FEATURES].to_pickle(f'{self.p.transformed_path}/songs.pkl')
+            members[['raw_msno'] + metadata.MEMBER_FEATURES].to_pickle('{}/members.pkl'.format(p.transformed_path))
+            songs[['raw_song_id'] + metadata.SONG_FEATURES].to_pickle('{}/songs.pkl'.format(p.transformed_path))
 
             self.logger.info('Merge train data')
             tr = self.train_merge(tr, members, songs, mapper_dict)
@@ -594,13 +590,13 @@ class Input(object):
 
             self.logger.info('Persistent train valid data, maybe take a while ...')
             s_ = datetime.now()
-            tr.to_pickle(f'{self.p.transformed_path}/tr.pkl')
-            vl.to_pickle(f'{self.p.transformed_path}/vl.pkl')
+            tr.to_pickle('{}/tr.pkl'.format(p.transformed_path))
+            vl.to_pickle('{}/vl.pkl'.format(p.transformed_path))
 
-            self.logger.info(f'Persistent train, valid take time {datetime.now() - s_}')
+            self.logger.info('Persistent train, valid take time {}'.format(datetime.now() - s))
             ret = self
 
-        self.logger.info(f'Transform take time {datetime.now() - s}')
+        self.logger.info('Transform take time {}'.format(datetime.now() - s))
         return ret
 
     def _transform_feature(self, y, mapper:utils.BaseMapper, is_multi=False, sep=None):
@@ -631,7 +627,7 @@ class Input(object):
             if callable(sep):
                 return inp.map(sep, na_action='ignore')
             else:
-                return inp.str.split(f'\s*{re.escape(sep)}\s*')
+                return inp.str.split('\s*{}\s*'.format(re.escape(sep)))
 
         y = pd.Series(y)
         ret = None
@@ -657,7 +653,7 @@ class Input(object):
             else:
                 ret = y.map(mapper.enc_, na_action='ignore').fillna(0).astype(int).values
 
-        self.logger.info(f'transform take time {datetime.now() - s}')
+        self.logger.info('transform take time {}'.format(datetime.now() - s))
         return ret
 
     def train_merge(self, inputs, members, songs, mapper_dict, is_serving=False):
@@ -712,7 +708,7 @@ class Input(object):
 
         :return: `tf.estimator.export.ServingInputReceiver` object
         """
-        self.logger.info(f'use json_serving_input_fn !')
+        self.logger.info('use json_serving_input_fn !')
 
         columns = metadata.SERVING_COLUMNS
         shapes = self.get_shape(is_serving=True)
@@ -880,7 +876,6 @@ class Input(object):
 
         return _input_fn, hook
 
-Input.instance = Input()
 
 class IteratorInitializerHook(tf.train.SessionRunHook):
     """Hook to initialise data iterator after Session is created."""

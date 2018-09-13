@@ -18,6 +18,25 @@ class Model(object):
         self.model_dir = model_dir
         self.feature = None
 
+    def construct_hidden_units(self, p):
+        """ Create the number of hidden units in each layer
+
+        if the HYPER_PARAMS.layer_sizes_scale_factor > 0 then it will use a "decay" mechanism
+        to define the number of units in each layer. Otherwise, task.HYPER_PARAMS.hidden_units
+        will be used as-is.
+
+        Returns:
+            list of int
+        """
+
+        hidden_units = [
+            max(2, int(p.first_layer_size * p.scale_factor ** i))
+            for i in range(p.num_layers)
+        ]
+
+        self.logger.info("Hidden units structure: {}".format(hidden_units))
+        return hidden_units
+
     def get_estimator(self, p, config:tf.estimator.RunConfig):
         """In this case, return `tf.estimator.DNNRegressor` or `tf.estimator.DNNLinearCombinedRegressor`,
 
@@ -29,7 +48,7 @@ class Model(object):
         deep_columns, wide_columns = self.feature.get_deep_and_wide_columns(feat_spec)
         if self.name == 'deep':
             est = tf.estimator.DNNRegressor(
-                hidden_units=p.mlp_layers,
+                hidden_units=self.construct_hidden_units(p),
                 feature_columns=deep_columns,
                 # model_dir=self.model_dir,
                 label_dimension=1,
@@ -37,7 +56,7 @@ class Model(object):
                 optimizer=tf.train.AdamOptimizer(p.learning_rate),
                 # optimizer='Adagrad',
                 # optimizer=tf.train.GradientDescentOptimizer(learning_rate=0.001),
-                activation_fn=tf.nn.selu,
+                activation_fn=tf.nn.relu,
                 dropout=p.drop_rate,
                 input_layer_partitioner=None,
                 config=config
@@ -51,8 +70,8 @@ class Model(object):
                 dnn_feature_columns=deep_columns,
                 # dnn_optimizer='Adagrad',
                 dnn_optimizer=tf.train.AdamOptimizer(p.learning_rate),
-                dnn_hidden_units=p.mlp_layers,
-                dnn_activation_fn=tf.nn.selu,
+                dnn_hidden_units=self.construct_hidden_units(p),
+                dnn_activation_fn=tf.nn.relu,
                 dnn_dropout=p.drop_rate,
                 label_dimension=1,
                 weight_column=None,
@@ -132,7 +151,7 @@ class BestScoreExporter(tf.estimator.Exporter):
     def get_last_eval(self):
         """Get the latest best score."""
         path = '{}/best.eval'.format(self.model_dir)
-        if os.path.exists(path):
+        if tf.gfile.Exists(path):
             return utils.read_pickle(path)
         else:
             return None
@@ -287,9 +306,9 @@ class Feature(object):
             feature_columns.update(categorical_columns_with_hash_bucket)
 
         # add extended feature_column(s) before returning the complete feature_column dictionary
-        return self.extend_feature_columns(feature_columns)
+        return self.extend_feature_columns(p, feature_columns)
 
-    def extend_feature_columns(self, feature_columns):
+    def extend_feature_columns(self, p, feature_columns):
         """ Use to define additional feature columns, such as bucketized_column(s), crossed_column(s),
         and embedding_column(s). task.HYPER_PARAMS can be used to parameterise the creation
         of the extended columns (e.g., embedding dimensions, number of buckets, etc.).
@@ -306,7 +325,7 @@ class Feature(object):
             'month': 3,
             'day': 3,
             'state': 3,
-            'store': 16,
+            'store': p.embedding_size,
             'year': 3,
             'assortment': 3,
             'store_type': 3,

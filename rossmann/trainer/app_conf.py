@@ -8,30 +8,7 @@ class Config(object):
         self.project_id = 'ml-team-cloudmile'
         self.api_key_path = 'C:/Users/gary/client_secret.json'
         self.base_dir = os.path.dirname(os.path.dirname(__file__)).replace('\\', '/')
-        self.data_path = '{}/data'.format(self.base_dir)
-        self.proc_path = '{}/processed'.format(self.data_path)
-        self.model_path = '{}/models'.format(self.base_dir)
-
-        # Original data path
-        self.store_data = '{}/store.csv'.format(self.data_path)
-        self.store_state = '{}/store_states.csv'.format(self.data_path)
-        self.train_data = '{}/train.csv'.format(self.data_path)
-        self.valid_data = '{}/valid.csv'.format(self.data_path)
-        self.test_data = '{}/test.csv'.format(self.data_path)
-
-        # Processed data path
-        self.cleaned_path = '{}/cleaned'.format(self.proc_path)
-        self.prepared_path = '{}/prepared'.format(self.proc_path)
-        self.fitted_path = '{}/fitted'.format(self.proc_path)
-        self.transformed_path = '{}/transformed'.format(self.proc_path)
-
-        # train_full_pr = '{proc_path}/train_full_pr.pkl'
-        # Support base match pattern, see tf.matching_files function
-        self.train_files = '{}/tr.csv'.format(self.transformed_path)
-        self.valid_files = '{}/vl.csv'.format(self.transformed_path)
-        self.feature_stats_file = '{}/stats.json'.format(self.fitted_path)
-        self.tr_dt_file = '{}/tr_date.json'.format(self.transformed_path)
-        self.vl_dt_file = '{}/vl_date.json'.format(self.transformed_path)
+        self.set_path()
 
         # Data prepare relevant parameter
         self.valid_size = 0.3
@@ -61,14 +38,7 @@ class Config(object):
         # Serving relevant
         self.serving_format = 'json'
 
-# Config.instance = Config()
-
-class CMLEConfig(Config):
-    instance = None
-
-    def __init__(self):
-        super(CMLEConfig, self).__init__()
-        self.base_dir = 'gs://ml-specialized/rossmann'
+    def set_path(self):
         self.data_path = '{}/data'.format(self.base_dir)
         self.proc_path = '{}/processed'.format(self.data_path)
         self.model_path = '{}/models'.format(self.base_dir)
@@ -89,9 +59,20 @@ class CMLEConfig(Config):
         # Support base match pattern, see tf.matching_files function
         self.train_files = '{}/tr.csv'.format(self.transformed_path)
         self.valid_files = '{}/vl.csv'.format(self.transformed_path)
+        self.test_files = '{}/te.csv'.format(self.transformed_path)
         self.feature_stats_file = '{}/stats.json'.format(self.fitted_path)
         self.tr_dt_file = '{}/tr_date.json'.format(self.transformed_path)
         self.vl_dt_file = '{}/vl_date.json'.format(self.transformed_path)
+
+# Config.instance = Config()
+
+class CMLEConfig(Config):
+    instance = None
+
+    def __init__(self):
+        super(CMLEConfig, self).__init__()
+        self.base_dir = 'gs://ml-specialized/rossmann'
+        self.set_path()
 
 
 # CMLEConfig.instance = CMLEConfig()

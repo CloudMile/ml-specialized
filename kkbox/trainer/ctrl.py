@@ -1,4 +1,4 @@
-import os, pandas as pd, argparse
+import os, pandas as pd, argparse, re
 
 from . import app_conf, service, input
 from .utils import utils
@@ -75,6 +75,40 @@ class Ctrl(object):
         data = self.input.prepare(p, data, is_serving=True)
         data = self.input.transform(p, data, is_serving=True)
         return data
+
+    def submit(self, p):
+        """Simple call service.train
+
+        :param p: Parameters
+          - reset: If True empty the training model directory
+          - model_name: Specify which model to train
+        :return: self
+        """
+        p = self.merge_params(p)
+
+        commands = """
+            gcloud ml-engine jobs submit training {job_name} \
+                --job-dir={job_dir} \
+                --runtime-version=1.10 \
+                --region=asia-east1 \
+                --module-name=trainer.ctrl \
+                --package-path=trainer  \
+                --config=config.yaml \
+                -- \
+                --method=train \
+                --model-name={model_name} \
+                --train-steps={train_steps} \
+                --verbosity={verbosity} \
+                --save-checkpoints-steps={save_checkpoints_steps} \
+                --throttle-secs={throttle_secs} \
+                --reset={reset}
+        """.strip().format(**p.to_dict())
+
+        self.logger.info('submit cmd:\n{commands}'.format(
+            **{'commands': re.sub(r'\s{2,}', '\n  ', commands)}))
+        self.logger.info( utils.cmd(commands) )
+        # print( 'commands: {}'.format(commands) )
+        return self
 
     def train(self, p):
         """Simple call service.train
@@ -198,6 +232,11 @@ class Ctrl(object):
             params = {}
             params.update(app_conf.get_config(args.get("env")).__dict__)
             params.update(args)
+            # if `cos_decay_steps` is not specified, default the same as `train_steps`
+            # if both `cos_decay_steps` and `train_steps` are not specified,
+            # the default settings are in the `app_conf` module
+            if args.get("train_steps") is not None and args.get("cos_decay_steps") is None:
+                params['cos_decay_steps'] = params['train_steps']
             params = pd.Series(params)
         else:
             params = pd.Series(app_conf.get_config().__dict__)

@@ -38,6 +38,22 @@ class Input(object):
             # 'csv': getattr(self, 'csv_serving_fn')
         }
 
+    def read_csv(self, path, *args, **kwargs):
+        with tf.gfile.FastGFile(path, 'rb') as fp:
+            return pd.read_csv(fp, *args, **kwargs)
+
+    def write_csv(self, data, path, *args, **kwargs):
+        with tf.gfile.FastGFile(path, 'wb') as fp:
+            data.to_csv(fp, *args, **kwargs)
+
+    def read_pickle(self, path, *args, **kwargs):
+        with tf.gfile.FastGFile(path, 'rb') as fp:
+            return pd.read_pickle(fp, *args, **kwargs)
+
+    def write_pickle(self, data, path, *args, **kwargs):
+        with tf.gfile.FastGFile(path, 'wb') as fp:
+            data.to_pickle(fp)
+
     def clean(self, p, data, is_serving=False):
         """Missing value imputing, maybe some data transformation to string features.
 
@@ -48,7 +64,7 @@ class Input(object):
         self.logger.info('Clean start, is_serving: {}'.format(is_serving))
         s = datetime.now()
         if isinstance(data, str):
-            data = pd.read_csv(data)
+            data = self.read_csv(data)
 
         ret = None
         data['source_system_tab'] = data.source_system_tab.fillna('')
@@ -58,9 +74,9 @@ class Input(object):
         if is_serving:
             ret = data
         else:
-            members = pd.read_csv(p.raw_members)
-            songs = pd.read_csv(p.raw_songs) \
-                      .merge(pd.read_csv(p.raw_song_extra_info), how='left', on='song_id') \
+            members = self.read_csv(p.raw_members)
+            songs = self.read_csv(p.raw_songs) \
+                      .merge(self.read_csv(p.raw_song_extra_info), how='left', on='song_id') \
                       .drop('name', 1)
 
             self.logger.info('Clean table members.')
@@ -89,8 +105,9 @@ class Input(object):
             songs['lyricist'] = str2tuple(songs['lyricist'])
             # songs['language'] = songs.language.fillna(0).map(int, na_action='ignore').map(str)
             songs['language'] = songs.language.map(lambda e: str(int(float(e))), na_action='ignore').fillna('')
-            members.to_pickle('{}/members.pkl'.format(p.cleaned_path))
-            songs.to_pickle('{}/songs.pkl'.format(p.cleaned_path))
+
+            self.write_pickle(members, '{}/members.pkl'.format(p.cleaned_path))
+            self.write_pickle(songs, '{}/songs.pkl'.format(p.cleaned_path))
             ret = data
 
         self.logger.info('Clean take time {}'.format(datetime.now() - s))
@@ -110,7 +127,7 @@ class Input(object):
         self.logger.info('Split start')
         s = datetime.now()
         if isinstance(data, str):
-            data = pd.read_csv(data)
+            data = self.read_csv(data)
 
         msno_describe = data.groupby('msno').size().describe()
         per25, per75 = int(msno_describe['25%']), int(msno_describe['75%'])
@@ -133,8 +150,8 @@ class Input(object):
         vl = data.query('is_train == 0').drop('is_train', 1).reset_index(drop=True)
         tr = data.query('is_train == 1').drop('is_train', 1).reset_index(drop=True)
 
-        tr.to_pickle('{}/tr.pkl'.format(p.cleaned_path))
-        vl.to_pickle('{}/vl.pkl'.format(p.cleaned_path))
+        self.write_pickle(tr, '{}/tr.pkl'.format(p.cleaned_path))
+        self.write_pickle(vl, '{}/vl.pkl'.format(p.cleaned_path))
 
         self.logger.info('Split take time {}'.format(datetime.now() - s))
         return tr, vl
@@ -262,14 +279,14 @@ class Input(object):
         self.logger.info('Prepare start')
         s = datetime.now()
         if isinstance(data, str):
-            data = pd.read_pickle(data)
+            data = utils.read_pickle(data)
 
         ret = None
         if is_serving:
             ret = data
         else:
-            members = pd.read_pickle('{}/members.pkl'.format(p.cleaned_path))
-            songs = pd.read_pickle('{}/songs.pkl'.format(p.cleaned_path))
+            members = utils.read_pickle('{}/members.pkl'.format(p.cleaned_path))
+            songs = utils.read_pickle('{}/songs.pkl'.format(p.cleaned_path))
 
             self.logger.info('\nDo prepare_members')
             members = self.prepare_members(data, members, songs)
@@ -277,8 +294,8 @@ class Input(object):
             self.logger.info('\nDo prepare_songs')
             songs = self.prepare_songs(data, members, songs)
 
-            members.to_pickle('{}/members.pkl'.format(p.prepared_path))
-            songs.to_pickle('{}/songs.pkl'.format(p.prepared_path))
+            self.write_pickle(members, '{}/members.pkl'.format(p.prepared_path))
+            self.write_pickle(songs, '{}/songs.pkl'.format(p.prepared_path))
             # We don't do anything about train, valid files, just copy them form cleaned dir to prepared dir
             tf.gfile.Copy('{}/tr.pkl'.format(p.cleaned_path), '{}/tr.pkl'.format(p.prepared_path), overwrite=True)
             tf.gfile.Copy('{}/vl.pkl'.format(p.cleaned_path), '{}/vl.pkl'.format(p.prepared_path), overwrite=True)
@@ -434,10 +451,10 @@ class Input(object):
 
         s = datetime.now()
         if isinstance(data, str):
-            data = pd.read_pickle(data)
+            data = self.read_pickle(data)
 
-        members = pd.read_pickle('{}/members.pkl'.format(p.prepared_path))
-        songs = pd.read_pickle('{}/songs.pkl'.format(p.prepared_path))
+        members = self.read_pickle('{}/members.pkl'.format(p.prepared_path))
+        songs = self.read_pickle('{}/songs.pkl'.format(p.prepared_path))
         data = data.merge(members, on='msno', how='left').merge(songs, on='song_id', how='left')
 
         mapper_dict = {}
@@ -481,14 +498,14 @@ class Input(object):
 
         s = datetime.now()
         if isinstance(data, str):
-            data = pd.read_pickle(data)
+            data = self.read_pickle(data)
 
         ret = None
         mapper_dict = utils.read_pickle('{}/stats.pkl'.format(p.fitted_path))
         # Serving
         if is_serving:
-            members = pd.read_pickle('{}/members.pkl'.format(p.transformed_path))
-            songs = pd.read_pickle('{}/songs.pkl'.format(p.transformed_path))
+            members = self.read_pickle('{}/members.pkl'.format(p.transformed_path))
+            songs = self.read_pickle('{}/songs.pkl'.format(p.transformed_path))
             data.insert(0, 'raw_msno', data.pop('msno'))
             data.insert(1, 'raw_song_id', data.song_id)
             for feat in ('song_id', 'source_system_tab', 'source_screen_name', 'source_type'):
@@ -501,9 +518,9 @@ class Input(object):
         # Train, eval period
         else:
             tr = data
-            vl = pd.read_pickle('{}/vl.pkl'.format(p.prepared_path))
-            members = pd.read_pickle('{}/members.pkl'.format(p.prepared_path))
-            songs = pd.read_pickle('{}/songs.pkl'.format(p.prepared_path))
+            vl = self.read_pickle('{}/vl.pkl'.format(p.prepared_path))
+            members = self.read_pickle('{}/members.pkl'.format(p.prepared_path))
+            songs = self.read_pickle('{}/songs.pkl'.format(p.prepared_path))
 
             members.insert(0, 'raw_msno', members.pop('msno'))
             for feat in metadata.MEMBER_FEATURES:
@@ -580,8 +597,10 @@ class Input(object):
                 tr[feat] = self._transform_feature(tr[feat], mapper_dict[feat])
                 vl[feat] = self._transform_feature(vl[feat], mapper_dict[feat])
 
-            members[['raw_msno'] + metadata.MEMBER_FEATURES].to_pickle('{}/members.pkl'.format(p.transformed_path))
-            songs[['raw_song_id'] + metadata.SONG_FEATURES].to_pickle('{}/songs.pkl'.format(p.transformed_path))
+            self.write_pickle(members[['raw_msno'] + metadata.MEMBER_FEATURES],
+                              '{}/members.pkl'.format(p.transformed_path))
+            self.write_pickle(songs[['raw_song_id'] + metadata.SONG_FEATURES],
+                              '{}/songs.pkl'.format(p.transformed_path))
 
             self.logger.info('Merge train data')
             tr = self.train_merge(tr, members, songs, mapper_dict)
@@ -589,9 +608,8 @@ class Input(object):
             vl = self.train_merge(vl, members, songs, mapper_dict)
 
             self.logger.info('Persistent train valid data, maybe take a while ...')
-            s_ = datetime.now()
-            tr.to_pickle('{}/tr.pkl'.format(p.transformed_path))
-            vl.to_pickle('{}/vl.pkl'.format(p.transformed_path))
+            self.write_pickle(tr, '{}/tr.pkl'.format(p.transformed_path))
+            self.write_pickle(vl, '{}/vl.pkl'.format(p.transformed_path))
 
             self.logger.info('Persistent train, valid take time {}'.format(datetime.now() - s))
             ret = self

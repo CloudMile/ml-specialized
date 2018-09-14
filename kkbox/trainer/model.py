@@ -1,7 +1,7 @@
 import tensorflow as tf, pandas as pd
 from tensorflow.contrib.nn import alpha_dropout
 
-from . import app_conf, input, metadata
+from . import metadata
 from .utils import utils
 
 class Model(object):
@@ -376,7 +376,7 @@ class NeuMFModel(Model):
         self.logger.info('mode: {}, is_train: {}, '
                          'use dropout: {}'.format(mode, is_train, is_train and p.drop_rate > 0))
 
-        self.base_features(features, labels, mode)
+        self.base_features(p, features, labels, mode)
 
         uniform_init_fn = tf.glorot_uniform_initializer()
         mlp_members, mlp_songs, mlp_conext = (
@@ -442,7 +442,7 @@ class NeuMFModel(Model):
                 # update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
                 # with tf.control_dependencies(update_ops):
 
-                learning_rate = tf.train.cosine_decay(p.initial_learning_rate,
+                learning_rate = tf.train.cosine_decay(p.learning_rate,
                                                       self.global_step,
                                                       p.cos_decay_steps,
                                                       alpha=0.1)

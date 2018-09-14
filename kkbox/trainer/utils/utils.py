@@ -16,9 +16,9 @@ class Logging(object):
         :return: Object from `logging.getLogger`
         """
         if Logging.instance is None:
-            print(f'init logger instance ...')
+            print('init logger instance ...')
 
-            log_conf_path = f'{os.path.dirname(os.path.dirname(__file__))}/logging.yaml'
+            log_conf_path = '{}/logging.yaml'.format(os.path.dirname(os.path.dirname(__file__)))
             with codecs.open(log_conf_path, 'r', 'utf-8') as r:
                 logging.config.dictConfig(yaml.load(r))
             Logging.instance = logging
@@ -63,8 +63,7 @@ def deep_walk(path, prefix:str=None):
         prefix = ''
     for root, dirs, files in os.walk(path):
         sub_root = root.replace(path, '', 1).replace('\\', '/')
-        # print(f'root: {root}, sub_root: {sub_root}')
-        sub_root = f'{prefix}{sub_root}'
+        sub_root = '{}{}'.format(prefix, sub_root)
         for name in files:
             yield '/'.join([root, name]), '/'.join([sub_root, name])
 
@@ -207,7 +206,7 @@ class CatgMapper(BaseMapper):
         if callable(self.sep):
             return y.map(self.sep, na_action='ignore')
         else:
-            return y.str.split(f'\s*{re.escape(self.sep)}\s*')
+            return y.str.split('\s*{}\s*'.format(re.escape(self.sep)))
 
     def transform(self, y):
         """Transform data(must fit first)
@@ -286,7 +285,6 @@ class CountMapper(CatgMapper):
             # Maybe outlier in the array of some row, e.g: ('', 'a', 'b', ...)
             if self.outlier is not None and self.outlier in self.counter:
                 self.counter.pop(self.outlier)
-            # y.str.split(f'\s*{re.escape(self.sep)}\s*').map(self.counter.update)
         else:
             self.counter.update(y.values)
 

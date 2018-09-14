@@ -98,6 +98,7 @@ class Ctrl(object):
                 --method=train \
                 --model-name={model_name} \
                 --train-steps={train_steps} \
+                --valid-steps={valid_steps} \
                 --verbosity={verbosity} \
                 --save-checkpoints-steps={save_checkpoints_steps} \
                 --throttle-secs={throttle_secs} \
@@ -232,10 +233,10 @@ class Ctrl(object):
             params = {}
             params.update(app_conf.get_config(args.get("env")).__dict__)
             params.update(args)
-            # if `cos_decay_steps` is not specified, default the same as `train_steps`
+            # `cos_decay_steps` default is the same as `train_steps`
             # if both `cos_decay_steps` and `train_steps` are not specified,
             # the default settings are in the `app_conf` module
-            if args.get("train_steps") is not None and args.get("cos_decay_steps") is None:
+            if args.get("train_steps") is not None:
                 params['cos_decay_steps'] = params['train_steps']
             params = pd.Series(params)
         else:
@@ -271,6 +272,14 @@ if __name__ == '__main__':
     parser.add_argument(
         '--job-dir',
         help='where to put checkpoints',
+    )
+    parser.add_argument(
+        '--train-files',
+        help='training files, could be a wildcard expression',
+    )
+    parser.add_argument(
+        '--valid-files',
+        help='eval files, could be a wildcard expression',
     )
     parser.add_argument(
         '--train-steps',
@@ -350,18 +359,11 @@ if __name__ == '__main__':
         default=32,
         type=int
     )
-    parser.add_argument(
-        '--cos-decay-steps',
-        help='cosine decay steps, usually same with train_steps',
-        default=4358,
-        type=int
-    )
-
 
     parser.add_argument(
         '--throttle-secs',
         help='how long to wait before running the next evaluation',
-        default=60,
+        default=600,
         type=int
     )
     parser.add_argument(

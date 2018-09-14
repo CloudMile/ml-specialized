@@ -96,6 +96,7 @@ class Ctrl(object):
                 --method=train \
                 --model-name={model_name} \
                 --train-steps={train_steps} \
+                --valid-steps={valid_steps} \
                 --verbosity={verbosity} \
                 --save-checkpoints-steps={save_checkpoints_steps} \
                 --throttle-secs={throttle_secs} \
@@ -300,10 +301,14 @@ if __name__ == '__main__':
         '--job-dir',
         help='where to put checkpoints',
     )
-    # parser.add_argument(
-    #     '--job-id',
-    #     help='job id for training and deploy',
-    # )
+    parser.add_argument(
+        '--train-files',
+        help='training files, could be a wildcard expression',
+    )
+    parser.add_argument(
+        '--valid-files',
+        help='eval files, could be a wildcard expression',
+    )
     parser.add_argument(
         '--train-steps',
         default=2308 * 8,

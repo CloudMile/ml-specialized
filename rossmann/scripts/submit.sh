@@ -9,7 +9,7 @@ BASE_NAME="rossmann" # change to your model name
 PACKAGE_PATH=trainer # this can be a gcs location to a zipped and uploaded package
 TRAIN_FILES=gs://${BUCKET}/rossmann/data/processed/transformed/tr.pkl
 VALID_FILES=gs://${BUCKET}/rossmann/data/processed/transformed/vl.pkl
-MODEL_DIR=gs://${BUCKET}/path/to/models/${BASE_NAME}
+MODEL_DIR=gs://${BUCKET}/${BASE_NAME}/models
 
 CURRENT_DATE=`date +%Y%m%d_%H%M%S`
 # JOB_NAME=train_${BASE_NAME}_${TIER}_${CURRENT_DATE}

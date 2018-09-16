@@ -1,4 +1,4 @@
-# task type can be either 'classification' or 'regression', based on the target feature in the dataset
+
 RAW_HEADER = ['Store', 'DayOfWeek', 'Date', 'Sales', 'Customers', 'Open', 'Promo',
        'StateHoliday', 'SchoolHoliday', 'StoreType', 'Assortment',
        'CompetitionDistance', 'CompetitionOpenSinceMonth',
@@ -94,7 +94,7 @@ INPUT_CATEGORICAL_FEATURE_NAMES_WITH_VOCABULARY = {
                          '37', '9', '39', '27', '18', '35', '23', '48', '36', '50',
                          '44', '49', '28'],
     'promo2since_year': ['2010', '2011', '2012', '2009', '2014', '2015', '2013'],
-    'year': ['2015', '2014', '2013'],
+    'year': ['2014', '2013'],
     'month': ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'],
     'day': ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10',
             '11', '12', '13', '14', '15', '16', '17', '18', '19', '20',

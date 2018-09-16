@@ -1,4 +1,4 @@
-import os, pandas as pd, argparse, re
+import os, pandas as pd, argparse, re, tensorflow as tf
 
 from . import app_conf, service, input
 from .utils import utils
@@ -71,7 +71,7 @@ class Ctrl(object):
         :return: Transformed data
         """
         p = self.merge_params(p)
-        data = self.input.clean(p.fpath, is_serving=True)
+        data = self.input.clean(p, p.fpath, is_serving=True)
         data = self.input.prepare(p, data, is_serving=True)
         data = self.input.transform(p, data, is_serving=True)
         return data
@@ -160,9 +160,9 @@ class Ctrl(object):
 
         p = self.merge_params(p)
         ml = self.service.find_ml()
-        self.service.create_model_rsc(ml, p.model_name)
-        self.service.clear_model_ver(ml, p.model_name)
-        self.service.create_model_ver(ml, p.model_name, p.deployment_uri)
+        self.service.create_model_rsc(p, ml, p.model_name)
+        self.service.clear_model_ver(p, ml, p.model_name)
+        self.service.create_model_ver(p, ml, p.model_name, p.deployment_uri)
         return self
 
     def local_predict(self, p):
@@ -177,13 +177,14 @@ class Ctrl(object):
         from tensorflow.contrib import predictor
 
         p = self.merge_params(p)
-        export_dir = self.service.find_latest_expdir(p, p.model_name)
+        export_dir = self.service.find_latest_expdir(p)
         predict_fn = predictor.from_saved_model(export_dir, signature_def_key='outputs')
 
         if p.is_src_file:
             datasource = p.datasource
         else:
-            datasource = self.service.read_transformed(p.datasource)
+            with tf.gfile.FastGFile(p.test_files, 'rb') as fp:
+                datasource = pd.read_pickle(fp)
 
         # callback = lambda pipe: predict_fn(pipe.to_dict('list')).get('predictions')
         predictions = []
@@ -213,8 +214,10 @@ class Ctrl(object):
 
         p = self.merge_params(p)
         datasource = p.datasource
-        if not isinstance(datasource, pd.DataFrame):
-            datasource = pd.DataFrame(datasource)
+        if isinstance(datasource, str):
+            # datasource = pd.DataFrame(datasource)
+            with tf.gfile.FastGFile(datasource, 'rb') as fp:
+                datasource = pd.read_pickle(fp)
 
         datasource = list(self.service.padded_batch(datasource))[0]
         records = datasource.to_dict('records')

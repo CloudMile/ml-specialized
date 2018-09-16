@@ -167,15 +167,14 @@ class Service(object):
         """
         return pd.read_csv(fpath, dtype=self.inp.get_processed_dtype(is_serving=True))
 
-    def find_latest_expdir(self, p, model_name, job_dir):
+    def find_latest_expdir(self, p):
         """Find latest exported directory by specified model name
 
         :param model_name: Model name in `dnn` `neu_mf`
         :param job_dir: Model checkpoint directory
         :return: Latest directory path
         """
-        self.check_model_name(model_name)
-        model_dir = job_dir # p.dnn_model_dir if model_name == 'deep' else p.wnd_model_dir
+        model_dir = p.job_dir
         # Found latest export dir
         export_dir = '{}/export/{}'.format(model_dir, p.export_name)
 

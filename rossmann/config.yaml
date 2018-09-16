@@ -16,7 +16,7 @@ trainingInput:
     - parameterName: num-layers
       type: INTEGER
       minValue: 2
-      maxValue: 4
+      maxValue: 5
       scaleType: UNIT_LINEAR_SCALE
     - parameterName: drop-rate
       type: DOUBLE
@@ -34,11 +34,14 @@ trainingInput:
       type: DISCRETE
       discreteValues:
       - 64
+      - 100
       - 128
-      - 200
+      - 256
+      - 512
+      - 1024
     - parameterName: scale-factor
       type: DOUBLE
-      minValue: 0.5
+      minValue: 0.2
       maxValue: 0.8
       scaleType: UNIT_LINEAR_SCALE
       

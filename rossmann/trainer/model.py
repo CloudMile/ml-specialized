@@ -22,8 +22,7 @@ class Model(object):
         """ Create the number of hidden units in each layer
 
         if the HYPER_PARAMS.layer_sizes_scale_factor > 0 then it will use a "decay" mechanism
-        to define the number of units in each layer. Otherwise, task.HYPER_PARAMS.hidden_units
-        will be used as-is.
+        to define the number of units in each layer.
 
         Returns:
             list of int

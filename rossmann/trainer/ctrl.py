@@ -1,4 +1,4 @@
-import numpy as np, os, argparse
+import numpy as np, os, argparse, tensorflow as tf
 import pandas as pd, re
 
 from . import app_conf, service, input, model as m
@@ -176,14 +176,14 @@ class Ctrl(object):
         from tensorflow.contrib import predictor
 
         p = self.merge_params(p)
-        export_dir = self.service.find_latest_expdir(p, p.model_name, p.job_dir)
+        export_dir = self.service.find_latest_expdir(p)
         predict_fn = predictor.from_saved_model(export_dir, signature_def_key='predict')
 
         if p.is_src_file:
             datasource = p.datasource
         else:
-            datasource = self.service.read_transformed(p.datasource)
-            datasource = self.input.fill_catg_na(datasource)
+            with tf.gfile.FastGFile(p.test_files, 'rb') as fp:
+                datasource = pd.read_pickle(fp)
 
         base = np.zeros(len(datasource))
         open_flag = datasource.open == '1'
@@ -207,11 +207,15 @@ class Ctrl(object):
           - model_name: Model name in `dnn` `neu_mf`
         :return: Predicted result
         """
+        import tensorflow as tf
+
         p = self.merge_params(p)
         datasource = p.datasource
         base = np.zeros(len(datasource))
-        if not isinstance(datasource, pd.DataFrame):
-            datasource = pd.DataFrame(datasource) # .to_dict('records')
+        if isinstance(datasource, str):
+            # datasource = pd.DataFrame(datasource)
+            with tf.gfile.FastGFile(datasource, 'rb') as fp:
+                datasource = pd.read_pickle(fp)
 
         open_flag = datasource.open == '1'
         preds = self.service.online_predict(p, datasource[open_flag].to_dict('records'), p.model_name)

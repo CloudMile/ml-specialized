@@ -59,12 +59,10 @@ class Config(object):
         # Support base match pattern, see tf.matching_files function
         self.train_files = '{}/tr.csv'.format(self.transformed_path)
         self.valid_files = '{}/vl.csv'.format(self.transformed_path)
-        self.test_files = '{}/te.csv'.format(self.transformed_path)
+        self.test_files = '{}/te.pkl'.format(self.transformed_path)
         self.feature_stats_file = '{}/stats.json'.format(self.fitted_path)
         self.tr_dt_file = '{}/tr_date.json'.format(self.transformed_path)
         self.vl_dt_file = '{}/vl_date.json'.format(self.transformed_path)
-
-# Config.instance = Config()
 
 class CMLEConfig(Config):
     instance = None
@@ -74,8 +72,6 @@ class CMLEConfig(Config):
         self.base_dir = 'gs://ml-specialized/rossmann'
         self.set_path()
 
-
-# CMLEConfig.instance = CMLEConfig()
 
 def get_config(env=None):
     if env == 'cloud':

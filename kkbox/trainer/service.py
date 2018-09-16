@@ -123,13 +123,11 @@ class Service(object):
         )
         return self
 
-    def find_latest_expdir(self, p, model_name):
+    def find_latest_expdir(self, p):
         """Find latest exported directory by specified model name
 
-        :param model_name: Model name in `dnn` `neu_mf`
         :return: Latest directory path
         """
-        self.check_model_name(model_name)
         model_dir = p.job_dir
         # Found latest export dir
         export_dir = '{}/export/{}'.format(model_dir, p.export_name)

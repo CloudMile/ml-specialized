@@ -185,10 +185,10 @@ class Ctrl(object):
             with tf.gfile.FastGFile(p.test_files, 'rb') as fp:
                 datasource = pd.read_pickle(fp)
 
+
         base = np.zeros(len(datasource))
         open_flag = datasource.open == '1'
         preds = predict_fn(datasource[open_flag]).get('predictions').ravel()
-
         # Column sales has been take np.log1p, so predict take np.expm
         preds = np.round(np.expm1(preds))
         base[open_flag] = preds
@@ -211,12 +211,12 @@ class Ctrl(object):
 
         p = self.merge_params(p)
         datasource = p.datasource
-        base = np.zeros(len(datasource))
         if isinstance(datasource, str):
             # datasource = pd.DataFrame(datasource)
             with tf.gfile.FastGFile(datasource, 'rb') as fp:
                 datasource = pd.read_pickle(fp)
 
+        base = np.zeros(len(datasource))
         open_flag = datasource.open == '1'
         preds = self.service.online_predict(p, datasource[open_flag].to_dict('records'), p.model_name)
         base[open_flag] = np.round(np.expm1(preds))

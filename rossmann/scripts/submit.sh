@@ -6,7 +6,7 @@ BUCKET="ml-specialized"
 
 BASE_NAME="rossmann" # change to your model name
 
-PACKAGE_PATH=trainer # this can be a gcs location to a zipped and uploaded package
+PACKAGE_PATH=../trainer # this can be a gcs location to a zipped and uploaded package
 TRAIN_FILES=gs://${BUCKET}/rossmann/data/processed/transformed/tr.pkl
 VALID_FILES=gs://${BUCKET}/rossmann/data/processed/transformed/vl.pkl
 MODEL_DIR=gs://${BUCKET}/${BASE_NAME}/models
@@ -30,7 +30,7 @@ gcloud ml-engine jobs submit training ${JOB_NAME} \
     --scale-tier=${TIER} \
     --module-name=trainer.ctrl \
     --package-path=${PACKAGE_PATH}  \
-    --config=config.yaml \
+    --config=../config.yaml \
     -- \
     --method=train \
     --model-name=${MODEL_NAME} \

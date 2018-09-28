@@ -16,7 +16,6 @@ This task can be seen as regression or time series problem. Here we propose regr
 
 ## Dataset
 
-- The label of the dataset are in (0, 1), we colud treat this a binary classification problem.
 - We put the dataset in `gs://ml-specialized/rossmann/data`.
 - Detail description about dataset see [rossmann.ipynb](./rossmann.ipynb).
 
